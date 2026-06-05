@@ -706,6 +706,7 @@
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
         } catch (e) {
+            // server sleeping – only count locally if never counted before
             if (!localStorage.getItem('miner_counted')) {
                 const prev = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)) || 0;
                 localStorage.setItem(ACTIVE_MINERS_KEY, prev + 1);
@@ -729,10 +730,11 @@
         updateMiningStats();
     }
 
-    // ---------- Claim reward (server first, then local) ----------
+    // ---------- Claim reward (SERVER FIRST, then local fallback) ----------
     async function claimReward() {
         if (!currentAccountId) return;
 
+        // Try server first
         try {
             const res = await fetch(`${API_BASE}/claim`, {
                 method: 'POST',
@@ -748,23 +750,24 @@
                 } else {
                     showModal('Claim failed', result.error);
                 }
-                return;
+                return;   // stop, no fallback
             }
 
+            // Server success → add reward and STOP (no local fallback)
             addToUserBalance(result.reward);
             localStorage.setItem(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
-            canvasConfetti({ particleCount:120, spread:70, origin:{y:0.6}, colors:['#ff3333','#ff8888'] });
+            canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
             showModal('Claimed', `🎉 You claimed ${result.reward} $FOOT!`);
             playGamepadSound();
             updateCircularTimer();
-            saveUserToCloud(); // Sync after claim
-            return;
+            saveUserToCloud();
+            return;   // <-- PREVENTS DOUBLE CLAIM
         } catch (e) {
             console.warn('Server unreachable, falling back to local claim');
         }
 
-        // Local fallback
+        // ---------- Local fallback (only if server unreachable) ----------
         const last = getStorage(LAST_CLAIM_KEY);
         const now = Date.now();
         if (last && (now - parseInt(last)) < 86400000) {
@@ -778,11 +781,11 @@
         localStorage.setItem(TOTAL_DISTRIBUTED_KEY, prevDist + rate);
         setStorage(LAST_CLAIM_KEY, now);
         updateMiningStats();
-        canvasConfetti({ particleCount:120, spread:70, origin:{y:0.6}, colors:['#ff3333','#ff8888'] });
+        canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
         showModal('Claimed (local)', `🎉 You claimed ${rate} $FOOT (offline mode)`);
         playGamepadSound();
         updateCircularTimer();
-        saveUserToCloud(); // Sync locally claimed too
+        saveUserToCloud();
     }
 
     function formatTime(ms) {
@@ -944,7 +947,7 @@
             updateReferralUI();
             updateMiningStats();
             playGamepadSound();
-            saveUserToCloud(); // Sync after referral
+            saveUserToCloud();
         } else {
             errorEl.innerText = 'Connection failed.';
         }
