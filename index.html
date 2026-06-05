@@ -123,7 +123,7 @@
         /* Adjust screen top padding to clear the two‑row header */
         .screen { padding-top: 102px; padding-bottom: 80px; }
 
-        /* Side menu & overlays unchanged */
+        /* Side menu & overlays */
         .side-menu { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: rgba(10,10,20,0.95); backdrop-filter: blur(16px); z-index: 200; transition: left 0.3s; border-right: 2px solid #ff5555; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
         .side-menu.open { left: 0; }
         .menu-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 150; visibility: hidden; opacity: 0; transition: 0.2s; }
@@ -393,7 +393,7 @@
         </div>
     </div>
 
-    <!-- Remaining screens (stake, pvp, tournaments, vision, virtual card, updates, legal, whitepaper, training, buy/sell, profile) are identical to before, only screen padding adjusted -->
+    <!-- Ecosystem sub-screens -->
     <div id="stakeScreen" class="screen hidden">
         <div style="width:100%;max-width:800px;margin:0 auto;">
             <div class="stake-details">
@@ -581,7 +581,6 @@
 
     const USER_BALANCE_KEY = 'metafoot_balance';
     const LAST_CLAIM_KEY = 'metafoot_last_claim';
-    // Global counters are now on the server, but we'll cache them in localStorage for display
     const ACTIVE_MINERS_KEY = 'metafoot_active_miners';
     const TOTAL_DISTRIBUTED_KEY = 'metafoot_total_distributed';
     const TOTAL_AIRDROP_CAP = 50000000;
@@ -661,7 +660,7 @@
     function deriveAccountId(seedphrase) { return sha256hex(normalizeSeedphrase(seedphrase)).substring(0,12); }
     function derivePlayerPublicId(accountId) { return sha256hex(accountId + "metafoot_player_salt").substring(0,12); }
 
-    // ---------- Global Server Sync ----------
+    // ---------- Global Server Sync (with fallback) ----------
     async function registerMinerGlobally(accountId) {
         try {
             const res = await fetch(`${API_BASE}/register-miner`, {
@@ -670,11 +669,16 @@
                 body: JSON.stringify({ accountId })
             });
             const result = await res.json();
-            // Update local cache with true global values
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
         } catch (e) {
-            console.error('Failed to register miner', e);
+            // Server offline – use local count (once per browser)
+            if (!localStorage.getItem('miner_counted')) {
+                const prev = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)) || 0;
+                localStorage.setItem(ACTIVE_MINERS_KEY, prev + 1);
+                localStorage.setItem('miner_counted', 'true');
+            }
+            updateMiningStats();
         }
     }
 
@@ -686,18 +690,19 @@
             ]);
             const minersData = await minersRes.json();
             const distData = await distRes.json();
-
             localStorage.setItem(ACTIVE_MINERS_KEY, minersData.totalMiners);
             localStorage.setItem(TOTAL_DISTRIBUTED_KEY, distData.totalDistributed);
-            updateMiningStats();
         } catch (e) {
-            // Silently fail – the app still works with cached values
+            // Server offline – keep local values
         }
+        updateMiningStats();
     }
 
-    // Replace local-only claim with server-enforced claim
+    // ---------- Claim reward (server first, then local) ----------
     async function claimReward() {
         if (!currentAccountId) return;
+
+        // Try server
         try {
             const res = await fetch(`${API_BASE}/claim`, {
                 method: 'POST',
@@ -716,7 +721,7 @@
                 return;
             }
 
-            // Success
+            // Server success
             addToUserBalance(result.reward);
             localStorage.setItem(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
@@ -724,9 +729,29 @@
             showModal('Claimed', `🎉 You claimed ${result.reward} $FOOT!`);
             playGamepadSound();
             updateCircularTimer();
+            return;
         } catch (e) {
-            console.error('Claim error', e);
+            console.warn('Server unreachable, falling back to local claim');
         }
+
+        // Local fallback (original logic)
+        const last = getStorage(LAST_CLAIM_KEY);
+        const now = Date.now();
+        if (last && (now - parseInt(last)) < 86400000) {
+            showModal('Already claimed', 'You already claimed today.');
+            return;
+        }
+        const rate = getCurrentRate();
+        if (rate <= 0) return;
+        addToUserBalance(rate);
+        const prevDist = parseInt(localStorage.getItem(TOTAL_DISTRIBUTED_KEY)) || 0;
+        localStorage.setItem(TOTAL_DISTRIBUTED_KEY, prevDist + rate);
+        setStorage(LAST_CLAIM_KEY, now);
+        updateMiningStats();
+        canvasConfetti({ particleCount:120, spread:70, origin:{y:0.6}, colors:['#ff3333','#ff8888'] });
+        showModal('Claimed (local)', `🎉 You claimed ${rate} $FOOT (offline mode)`);
+        playGamepadSound();
+        updateCircularTimer();
     }
 
     function formatTime(ms) {
@@ -736,7 +761,7 @@
         return `${h}h ${m}m ${s}s`;
     }
 
-    // -------- Original functions (unchanged) --------
+    // -------- Wallet creation & restore --------
     async function createWallet() {
         const seedphrase = generateSeedphrase(); const accountId = deriveAccountId(seedphrase);
         const referralCode = secureRandomHex12();
@@ -746,7 +771,6 @@
         currentAccountId = accountId;
         currentReferralCode = referralCode;
         currentPlayerPublicId = derivePlayerPublicId(accountId);
-        // Register globally (only counts once per accountId)
         await registerMinerGlobally(accountId);
         return { accountId, seedphrase, referralCode };
     }
@@ -803,6 +827,7 @@
 
     document.getElementById('claimCircleBtn').addEventListener('click', claimReward);
 
+    // Slideshow
     const summaries = ["Rental system","Train player","How you earn","Buy/sell player","Tournaments","League system","Knowledge challenge","Virtual Card","Football Academy","METAFOOT game"];
     let slideSeq = [], currentSlide = 0, slideTimeout, countdownInterval;
     const slideshowWrapper = document.getElementById('slideshowWrapper'), slideshowTimer = document.getElementById('slideshowTimer');
@@ -815,6 +840,7 @@
     function resetTimer() { clearTimeout(slideTimeout); clearInterval(countdownInterval); let t=40; slideshowTimer.innerText = `Next slide in ${t}s`; countdownInterval = setInterval(()=>{ t--; if(t>=0) slideshowTimer.innerText = `Next slide in ${t}s`; },1000); slideTimeout = setTimeout(()=>{ clearInterval(countdownInterval); nextSlide(); },40000); }
     buildSlides(); resetTimer();
 
+    // Role toggle
     const roleHeader = document.getElementById('roleHeader'), switchPlayerBtn = document.getElementById('switchToPlayerBtn'), switchManagerBtn = document.getElementById('switchToManagerBtn'), actionContainer = document.getElementById('actionButtonsContainer');
     function setUIRole(role) {
         if(role==='player') { 
@@ -851,10 +877,10 @@
     function hideAllScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); }
     function showScreen(id) { hideAllScreens(); document.getElementById(id).classList.remove('hidden'); }
 
+    // Referrals
     function getReferralReward() { const miners = getActiveMiners(); const baseReward = 2; if (miners < 15000) return baseReward; if (miners < 100000) return baseReward / 2; if (miners < 500000) return baseReward / 4; if (miners < 1000000) return baseReward / 8; return baseReward / 16; }
     function getReferralList() { const stored = localStorage.getItem(REFERRALS_KEY); return stored ? JSON.parse(stored) : []; }
     function addReferral(referrer, referred) { const list = getReferralList(); if (list.some(r => r.referrer === referrer && r.referred === referred)) return false; list.push({ referrer, referred, timestamp: Date.now() }); localStorage.setItem(REFERRALS_KEY, JSON.stringify(list)); return true; }
-    function getPendingRewardForAccount(accountId) { const list = getReferralList(); const count = list.filter(r => r.referrer === currentReferralCode).length; return count * getReferralReward(); }
     function updateReferralUI() {
         if (!currentAccountId) return;
         const refCodeEl = document.getElementById('refCodeDisplay');
@@ -1053,7 +1079,6 @@
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(currentRefs));
             }
         }
-        // Register globally (only counts first time, the server checks accountId)
         registerMinerGlobally(accountId);
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
@@ -1155,7 +1180,7 @@
         if(window._taskInterval) clearInterval(window._taskInterval); window._taskInterval = setInterval(renderTasks, 1000);
     }
 
-    // Start polling for global stats
+    // Global polling (every 30s)
     setInterval(refreshGlobalStats, 30000);
     refreshGlobalStats();
 
