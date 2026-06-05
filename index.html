@@ -660,6 +660,40 @@
     function deriveAccountId(seedphrase) { return sha256hex(normalizeSeedphrase(seedphrase)).substring(0,12); }
     function derivePlayerPublicId(accountId) { return sha256hex(accountId + "metafoot_player_salt").substring(0,12); }
 
+    // ---------- Cloud Sync ----------
+    async function saveUserToCloud() {
+        if (!currentAccountId) return;
+        try {
+            const backup = {
+                balance: getUserBalance(),
+                attributes: getStorage('player_training_attrs') ? JSON.parse(getStorage('player_training_attrs')) : {},
+                username: getStorage('profile_username') || '',
+                lastClaim: getStorage(LAST_CLAIM_KEY),
+                referrals: getReferralList().filter(r => r.referrer === currentReferralCode || r.referred === currentReferralCode),
+                referralCode: currentReferralCode
+            };
+            await fetch(`${API_BASE}/save-user`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountId: currentAccountId, userData: backup })
+            });
+        } catch (e) {
+            console.warn('Cloud save failed', e);
+        }
+    }
+
+    async function loadUserFromCloud() {
+        if (!currentAccountId) return null;
+        try {
+            const res = await fetch(`${API_BASE}/load-user?accountId=${currentAccountId}`);
+            const data = await res.json();
+            return data.userData;
+        } catch (e) {
+            console.warn('Cloud load failed', e);
+            return null;
+        }
+    }
+
     // ---------- Global Server Sync (with fallback) ----------
     async function registerMinerGlobally(accountId) {
         try {
@@ -672,7 +706,6 @@
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
         } catch (e) {
-            // Server offline – use local count (once per browser)
             if (!localStorage.getItem('miner_counted')) {
                 const prev = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)) || 0;
                 localStorage.setItem(ACTIVE_MINERS_KEY, prev + 1);
@@ -692,9 +725,7 @@
             const distData = await distRes.json();
             localStorage.setItem(ACTIVE_MINERS_KEY, minersData.totalMiners);
             localStorage.setItem(TOTAL_DISTRIBUTED_KEY, distData.totalDistributed);
-        } catch (e) {
-            // Server offline – keep local values
-        }
+        } catch (e) {}
         updateMiningStats();
     }
 
@@ -702,7 +733,6 @@
     async function claimReward() {
         if (!currentAccountId) return;
 
-        // Try server
         try {
             const res = await fetch(`${API_BASE}/claim`, {
                 method: 'POST',
@@ -721,7 +751,6 @@
                 return;
             }
 
-            // Server success
             addToUserBalance(result.reward);
             localStorage.setItem(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
@@ -729,12 +758,13 @@
             showModal('Claimed', `🎉 You claimed ${result.reward} $FOOT!`);
             playGamepadSound();
             updateCircularTimer();
+            saveUserToCloud(); // Sync after claim
             return;
         } catch (e) {
             console.warn('Server unreachable, falling back to local claim');
         }
 
-        // Local fallback (original logic)
+        // Local fallback
         const last = getStorage(LAST_CLAIM_KEY);
         const now = Date.now();
         if (last && (now - parseInt(last)) < 86400000) {
@@ -752,6 +782,7 @@
         showModal('Claimed (local)', `🎉 You claimed ${rate} $FOOT (offline mode)`);
         playGamepadSound();
         updateCircularTimer();
+        saveUserToCloud(); // Sync locally claimed too
     }
 
     function formatTime(ms) {
@@ -869,7 +900,7 @@
         const balance = getUserBalance(); document.getElementById('trainingBalance').innerText = balance.toLocaleString(); document.getElementById('playerIdDisplay').innerText = `ID: ${getPlayerId()}`; const worth = getTotalSpent(playerAttrs); document.getElementById('playerWorthDisplay').innerHTML = `Worth: ${worth.toFixed(1)} $FOOT`; document.getElementById('totalSpentDisplay').innerText = worth.toFixed(1);
         const container = document.getElementById('trainingAttributesContainer'); container.innerHTML = '';
         attributes.forEach(attr => { const val = playerAttrs[attr]||0; const percent = Math.min(100,val)+'%'; const nextCost = val<100 ? getUpgradeCost(val) : null; const row = document.createElement('div'); row.className = 'attribute-row'; row.innerHTML = `<div class="attribute-name">${attr.charAt(0).toUpperCase()+attr.slice(1)}</div><div class="bar-container"><div class="bar-fill" style="width:${percent};"></div></div><div class="attribute-value">${val}</div>${nextCost ? `<button class="upgrade-btn" data-attr="${attr}" data-cost="${nextCost.toFixed(2)}">+1 (${nextCost.toFixed(2)})</button>` : '<button class="upgrade-btn" disabled>Max</button>'}`; container.appendChild(row); });
-        document.querySelectorAll('.upgrade-btn:not([disabled])').forEach(btn => { btn.addEventListener('click', () => { const attr = btn.dataset.attr; const cost = parseFloat(btn.dataset.cost); if (getUserBalance() >= cost) { addToUserBalance(-cost); playerAttrs[attr] = (playerAttrs[attr]||0)+1; saveAttributes(); renderTrainingScreen(); updateMiningStats(); playGamepadSound(); } else showModal('Need more $FOOT', `You need ${cost.toFixed(2)} $FOOT.`); }); });
+        document.querySelectorAll('.upgrade-btn:not([disabled])').forEach(btn => { btn.addEventListener('click', () => { const attr = btn.dataset.attr; const cost = parseFloat(btn.dataset.cost); if (getUserBalance() >= cost) { addToUserBalance(-cost); playerAttrs[attr] = (playerAttrs[attr]||0)+1; saveAttributes(); renderTrainingScreen(); updateMiningStats(); playGamepadSound(); saveUserToCloud(); } else showModal('Need more $FOOT', `You need ${cost.toFixed(2)} $FOOT.`); }); });
         const tiers = [0,20,40,60,80,100]; const maxCost = getUpgradeCost(99); document.getElementById('trainingChartInner').innerHTML = tiers.map(lvl => { const cost = lvl<100 ? getUpgradeCost(lvl) : getUpgradeCost(99); return `<div class="chart-row"><div class="chart-label">Lvl ${lvl}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(cost/maxCost)*100}%;"></div></div><div class="chart-value">${cost.toFixed(2)}</div></div>`; }).join('');
     }
     function openTrainingScreen() { loadAttributes(); renderTrainingScreen(); hideAllScreens(); document.getElementById('trainingScreen').classList.remove('hidden'); }
@@ -913,6 +944,7 @@
             updateReferralUI();
             updateMiningStats();
             playGamepadSound();
+            saveUserToCloud(); // Sync after referral
         } else {
             errorEl.innerText = 'Connection failed.';
         }
@@ -1082,6 +1114,23 @@
         registerMinerGlobally(accountId);
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
+
+        // Load cloud data and merge
+        loadUserFromCloud().then(cloudData => {
+            if (cloudData) {
+                if (cloudData.balance !== undefined) setUserBalance(cloudData.balance);
+                if (cloudData.attributes) setStorage('player_training_attrs', JSON.stringify(cloudData.attributes));
+                if (cloudData.username) setStorage('profile_username', cloudData.username);
+                if (cloudData.lastClaim) setStorage(LAST_CLAIM_KEY, cloudData.lastClaim);
+                if (cloudData.referrals && Array.isArray(cloudData.referrals)) localStorage.setItem(REFERRALS_KEY, JSON.stringify(cloudData.referrals));
+                if (cloudData.referralCode) { setStorage(REF_CODE_V2_KEY, cloudData.referralCode); currentReferralCode = cloudData.referralCode; }
+                updateMiningStats();
+                updateReferralUI();
+                loadAttributes();
+                renderTrainingScreen();
+                updateCircularTimer();
+            }
+        });
     }
 
     // Music
@@ -1155,7 +1204,7 @@
         showScreen('whitepaperScreen'); playGamepadSound(); 
     });
     document.querySelector('[data-action="profile"]').addEventListener('click', ()=> { loadProfile(); showScreen('profileScreen'); playGamepadSound(); });
-    document.getElementById('saveProfileBtn').addEventListener('click', ()=> { const u = document.getElementById('profileUsername').value.trim(); if(u) { setStorage('profile_username', u); showModal('Saved','Username saved!'); playGamepadSound(); } });
+    document.getElementById('saveProfileBtn').addEventListener('click', ()=> { const u = document.getElementById('profileUsername').value.trim(); if(u) { setStorage('profile_username', u); showModal('Saved','Username saved!'); playGamepadSound(); saveUserToCloud(); } });
     document.querySelector('[data-action="legal"]').addEventListener('click', ()=> { showScreen('legalScreen'); playGamepadSound(); });
     document.querySelector('[data-action="lock"]').addEventListener('click', ()=> { if(window._taskInterval) clearInterval(window._taskInterval); clearSession(); currentAccountId=null; appContainer.style.display='none'; authScreen.classList.remove('hidden'); document.getElementById('loginAccountId').value=''; document.getElementById('loginError').innerText=''; });
     document.getElementById('updatesBtn').addEventListener('click', ()=> { showScreen('updatesScreen'); playGamepadSound(); });
@@ -1175,13 +1224,14 @@
         const taskList = document.getElementById('dailyTasksList');
         taskList.innerHTML = `<li><span>📱 Visit Telegram Channel</span><button class="task-btn" id="telegramTaskBtn" ${tgReady?'':'disabled'}>${tgReady?'0.6 $FOOT':formatCooldown(tgLast)}</button></li><li><span>🐦 Visit X (Twitter)</span><button class="task-btn" id="xTaskBtn" ${xReady?'':'disabled'}>${xReady?'0.6 $FOOT':formatCooldown(xLast)}</button></li>`;
         function formatCooldown(last) { const remaining = COOLDOWN_MS - (now - last); const mins = Math.floor(remaining / 60000); const secs = Math.floor((remaining % 60000) / 1000); return `${mins}:${secs.toString().padStart(2,'0')}`; }
-        document.getElementById('telegramTaskBtn')?.addEventListener('click', () => { if(!tgReady) return; window.open('https://t.me/metafoott','_blank'); setStorage(TG_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); });
-        document.getElementById('xTaskBtn')?.addEventListener('click', () => { if(!xReady) return; const start = Date.now(); window.location.href = 'twitter://user?screen_name=METAFOOTT'; setTimeout(()=>{ if(Date.now()-start<2000) window.open('https://x.com/METAFOOTT','_blank'); },500); setStorage(X_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); });
+        document.getElementById('telegramTaskBtn')?.addEventListener('click', () => { if(!tgReady) return; window.open('https://t.me/metafoott','_blank'); setStorage(TG_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
+        document.getElementById('xTaskBtn')?.addEventListener('click', () => { if(!xReady) return; const start = Date.now(); window.location.href = 'twitter://user?screen_name=METAFOOTT'; setTimeout(()=>{ if(Date.now()-start<2000) window.open('https://x.com/METAFOOTT','_blank'); },500); setStorage(X_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
         if(window._taskInterval) clearInterval(window._taskInterval); window._taskInterval = setInterval(renderTasks, 1000);
     }
 
-    // Global polling (every 30s)
+    // Global polling & auto-save
     setInterval(refreshGlobalStats, 30000);
+    setInterval(saveUserToCloud, 300000); // every 5 minutes
     refreshGlobalStats();
 
     const authScreen = document.getElementById('authScreen');
