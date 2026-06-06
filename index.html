@@ -210,7 +210,7 @@
         .custom-modal-box textarea { width: 100%; background: #1a1a2a; border: 1px solid #ff5555; border-radius: 1rem; padding: 1rem; color: white; font-family: monospace; font-size: 0.8rem; resize: none; }
         .pre-sale-page { text-align: center; padding: 2rem; color: #ffcccc; }
 
-        /* ----- NEW: Inline button container for referral ----- */
+        /* Inline button container for referral */
         .referral-buttons-row {
             display: flex;
             gap: 0.8rem;
@@ -373,7 +373,6 @@
                     <div class="referral-box">
                         <p><strong>Connect with a Friend</strong><br>Enter their referral code below to earn <span style="color:#ffaaaa;">2 $FOOT</span> instantly.</p>
                         <div class="auth-input-group" style="margin-top:0.5rem;"><i class="fas fa-user-plus"></i><input type="text" id="friendCodeInput" placeholder="e.g., 7a3f9b2c4d1e" maxlength="12"></div>
-                        <!-- NEW: row with two buttons -->
                         <div class="referral-buttons-row">
                             <button id="submitReferralBtn" class="action-btn">Connect & Earn</button>
                             <button id="copyInviteLinkBtn" class="action-btn">📋 Copy Invite Link</button>
@@ -617,6 +616,15 @@
     const X_LAST_KEY = 'metafoot_last_x_claim';
     const COOLDOWN_MS = 30 * 60 * 1000;
 
+    // --- NEW: Read referral code from URL and store in sessionStorage ---
+    (function() {
+        const params = new URLSearchParams(window.location.search);
+        const ref = params.get('ref');
+        if (ref && ref.length === 12 && /^[a-f0-9]+$/i.test(ref)) {
+            sessionStorage.setItem('invite_ref_code', ref.toLowerCase());
+        }
+    })();
+
     function userKey(baseKey) {
         if (!baseKey) return baseKey;
         if (baseKey === ACTIVE_MINERS_KEY || baseKey === TOTAL_DISTRIBUTED_KEY || baseKey === REFERRALS_KEY) return baseKey;
@@ -726,7 +734,6 @@
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
         } catch (e) {
-            // server sleeping – keep the old local cache value, don't count locally
             updateMiningStats();
         }
     }
@@ -767,7 +774,6 @@
                 return;
             }
 
-            // Server success – reward added once, and only once
             addToUserBalance(result.reward);
             setStorage(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
@@ -945,17 +951,46 @@
             errorEl.innerText = 'Connection failed.';
         }
     }
+
+    // --- NEW: Auto-connect referral from invite link after wallet creation ---
+    async function autoConnectReferral() {
+        const storedRef = sessionStorage.getItem('invite_ref_code');
+        if (!storedRef || !currentAccountId || !currentReferralCode) return;
+        // Don't refer yourself
+        if (storedRef === currentReferralCode) {
+            sessionStorage.removeItem('invite_ref_code');
+            return;
+        }
+        // Check if already connected
+        const list = getReferralList();
+        if (list.some(r => r.referrer === storedRef && r.referred === currentReferralCode)) {
+            sessionStorage.removeItem('invite_ref_code');
+            return;
+        }
+        // Add referral
+        if (addReferral(storedRef, currentReferralCode)) {
+            const reward = getReferralReward();
+            addToUserBalance(reward);
+            updateReferralUI();
+            updateMiningStats();
+            saveUserToCloud();
+            // Show a subtle notification
+            showModal('Welcome!', `You've been connected via invite link and received ${reward.toFixed(2)} $FOOT!`);
+        }
+        // Clear the stored code so it doesn't apply again
+        sessionStorage.removeItem('invite_ref_code');
+    }
+
     document.getElementById('navReferral').addEventListener('click', ()=> { showScreen('referralScreen'); updateReferralUI(); playGamepadSound(); });
     document.getElementById('submitReferralBtn').addEventListener('click', handleReferralSubmit);
 
-    // ----- NEW: Copy Invite Link button -----
+    // Copy Invite Link button
     document.getElementById('copyInviteLinkBtn').addEventListener('click', async () => {
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code) {
             showModal('Error', 'No referral code found.');
             return;
         }
-        // Build invite link using current page's origin and path, plus ?ref=CODE
         const base = window.location.origin + window.location.pathname;
         const inviteUrl = `${base}?ref=${code}`;
         const success = await copyToClipboard(inviteUrl);
@@ -1055,6 +1090,8 @@
             document.getElementById('miningScreen').classList.remove('hidden');
             showModal('Wallet Created', `Your Account ID: <span style="font-family:monospace;">${result.accountId}</span><br>Seedphrase (save safely):<br><span style="font-family:monospace;">${result.seedphrase}</span>`);
             playGamepadSound();
+            // Auto-connect referral if the user came via an invite link
+            await autoConnectReferral();
         } catch(e) { document.getElementById('createError').innerText = 'Error creating wallet.'; }
     });
 
@@ -1091,6 +1128,8 @@
         currentPlayerPublicId = derivePlayerPublicId(result.accountId);
         saveSession(result.accountId); initApp(result.accountId, result.backup);
         authScreen.classList.add('hidden'); appContainer.style.display = 'block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
+        // Optionally auto-connect for restored backups too
+        await autoConnectReferral();
     });
 
     document.getElementById('restoreSeedBtn').addEventListener('click', async () => {
@@ -1101,6 +1140,7 @@
             currentPlayerPublicId = derivePlayerPublicId(accountId);
             saveSession(accountId); initApp(accountId);
             authScreen.classList.add('hidden'); appContainer.style.display = 'block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
+            await autoConnectReferral();
         } catch(e) { document.getElementById('seedRestoreError').innerText = 'Invalid seedphrase.'; }
     });
 
