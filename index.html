@@ -694,7 +694,7 @@
         }
     }
 
-    // ---------- Global Server Sync (with fallback) ----------
+    // ---------- Global Server Sync (NO local fallback for claims/miner counting) ----------
     async function registerMinerGlobally(accountId) {
         try {
             const res = await fetch(`${API_BASE}/register-miner`, {
@@ -706,12 +706,7 @@
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
         } catch (e) {
-            // server sleeping – only count locally if never counted before
-            if (!localStorage.getItem('miner_counted')) {
-                const prev = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)) || 0;
-                localStorage.setItem(ACTIVE_MINERS_KEY, prev + 1);
-                localStorage.setItem('miner_counted', 'true');
-            }
+            // server sleeping – keep the old local cache value, don't count locally
             updateMiningStats();
         }
     }
@@ -730,11 +725,10 @@
         updateMiningStats();
     }
 
-    // ---------- Claim reward (SERVER FIRST, then local fallback) ----------
+    // ---------- Claim reward (SERVER ONLY – no local fallback) ----------
     async function claimReward() {
         if (!currentAccountId) return;
 
-        // Try server first
         try {
             const res = await fetch(`${API_BASE}/claim`, {
                 method: 'POST',
@@ -750,10 +744,10 @@
                 } else {
                     showModal('Claim failed', result.error);
                 }
-                return;   // stop, no fallback
+                return;
             }
 
-            // Server success → add reward and STOP (no local fallback)
+            // Server success – reward added once, and only once
             addToUserBalance(result.reward);
             localStorage.setItem(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
@@ -762,30 +756,10 @@
             playGamepadSound();
             updateCircularTimer();
             saveUserToCloud();
-            return;   // <-- PREVENTS DOUBLE CLAIM
         } catch (e) {
-            console.warn('Server unreachable, falling back to local claim');
+            // No local fallback – server sleeping or unreachable
+            showModal('Server asleep', 'The server is waking up. Please wait a few seconds and try again.');
         }
-
-        // ---------- Local fallback (only if server unreachable) ----------
-        const last = getStorage(LAST_CLAIM_KEY);
-        const now = Date.now();
-        if (last && (now - parseInt(last)) < 86400000) {
-            showModal('Already claimed', 'You already claimed today.');
-            return;
-        }
-        const rate = getCurrentRate();
-        if (rate <= 0) return;
-        addToUserBalance(rate);
-        const prevDist = parseInt(localStorage.getItem(TOTAL_DISTRIBUTED_KEY)) || 0;
-        localStorage.setItem(TOTAL_DISTRIBUTED_KEY, prevDist + rate);
-        setStorage(LAST_CLAIM_KEY, now);
-        updateMiningStats();
-        canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
-        showModal('Claimed (local)', `🎉 You claimed ${rate} $FOOT (offline mode)`);
-        playGamepadSound();
-        updateCircularTimer();
-        saveUserToCloud();
     }
 
     function formatTime(ms) {
