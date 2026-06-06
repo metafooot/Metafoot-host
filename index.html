@@ -380,7 +380,7 @@
                         <div class="error-message" id="referralError"></div>
                     </div>
                     <div class="referral-box">
-                        <p><strong>Your Pending Referral Rewards</strong><br><span style="font-size:1.5rem;font-weight:bold;color:#ffaaaa;" id="pendingReferralAmount">0</span> $FOOT<br><small>This amount will be added when $FOOT goes live.</small></p>
+                        <p><strong>Your Referral Rewards</strong><br><span style="font-size:1.5rem;font-weight:bold;color:#ffaaaa;" id="pendingReferralAmount">0</span> $FOOT earned<br><small>This amount comes from successful referrals and is added to your balance instantly.</small></p>
                         <p><strong>Friends Connected:</strong> <span id="referralCount">0</span></p>
                         <div class="friends-list" id="friendsListContainer"></div>
                     </div>
@@ -607,7 +607,7 @@
     const ENCRYPTED_SEED_KEY = 'metafoot_encrypted_seed';
     const SESSION_KEY = 'metafoot_session';
     const SESSION_EXPIRY_DAYS = 30;
-    const REFERRALS_KEY = 'metafoot_referrals_global';
+    const REFERRALS_KEY = 'metafoot_referrals_global'; // local copy for immediate UI updates
     const attributes = ['speed','shoot','power','intelligence','brilliance','accuracy'];
     let playerAttrs = {};
     const BASE_COST = 0.3;
@@ -616,7 +616,7 @@
     const X_LAST_KEY = 'metafoot_last_x_claim';
     const COOLDOWN_MS = 30 * 60 * 1000;
 
-    // --- NEW: Read referral code from URL and store in sessionStorage ---
+    // --- Read referral code from URL and store in sessionStorage ---
     (function() {
         const params = new URLSearchParams(window.location.search);
         const ref = params.get('ref');
@@ -715,7 +715,7 @@
         try {
             const res = await fetch(`${API_BASE}/load-user?accountId=${currentAccountId}`);
             const data = await res.json();
-            return data;   // returns { userData, lastServerClaim }
+            return data;   // returns { userData, lastServerClaim, referralInfo }
         } catch (e) {
             console.warn('Cloud load failed', e);
             return null;
@@ -910,14 +910,51 @@
     function hideAllScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); }
     function showScreen(id) { hideAllScreens(); document.getElementById(id).classList.remove('hidden'); }
 
-    // Referrals
-    function getReferralReward() { const miners = getActiveMiners(); const baseReward = 2; if (miners < 15000) return baseReward; if (miners < 100000) return baseReward / 2; if (miners < 500000) return baseReward / 4; if (miners < 1000000) return baseReward / 8; return baseReward / 16; }
+    // Referrals – local list used for quick UI updates, merged with server data
     function getReferralList() { const stored = localStorage.getItem(REFERRALS_KEY); return stored ? JSON.parse(stored) : []; }
-    function addReferral(referrer, referred) { const list = getReferralList(); if (list.some(r => r.referrer === referrer && r.referred === referred)) return false; list.push({ referrer, referred, timestamp: Date.now() }); localStorage.setItem(REFERRALS_KEY, JSON.stringify(list)); return true; }
+    function addReferralLocal(referrer, referred) {
+        const list = getReferralList();
+        if (list.some(r => r.referrer === referrer && r.referred === referred)) return false;
+        list.push({ referrer, referred, timestamp: Date.now() });
+        localStorage.setItem(REFERRALS_KEY, JSON.stringify(list));
+        return true;
+    }
+
+    // New: server-side referral call
+    async function addReferralOnServer(referrerCode, referredCode) {
+        try {
+            const res = await fetch(`${API_BASE}/referral-add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ referrerCode, referredCode })
+            });
+            const result = await res.json();
+            if (result.success) {
+                // Also update local storage for immediate display on this device
+                addReferralLocal(referrerCode, referredCode);
+                // If we are the inviter, we need to update our displayed balance
+                if (currentReferralCode === referrerCode) {
+                    // The server already credited the inviter's cloud balance.
+                    // Next cloud sync will update our local balance.
+                    // To show it immediately, we can add the reward to our local balance.
+                    const reward = result.reward || getReferralReward();
+                    addToUserBalance(reward);
+                    saveUserToCloud(); // save the new balance to cloud too
+                }
+            }
+            return result;
+        } catch (e) {
+            console.warn('Referral server call failed', e);
+            return { error: 'Server unreachable' };
+        }
+    }
+
+    function getReferralReward() { const miners = getActiveMiners(); const baseReward = 2; if (miners < 15000) return baseReward; if (miners < 100000) return baseReward / 2; if (miners < 500000) return baseReward / 4; if (miners < 1000000) return baseReward / 8; return baseReward / 16; }
+
     function updateReferralUI() {
-        if (!currentAccountId) return;
+        if (!currentAccountId || !currentReferralCode) return;
         const refCodeEl = document.getElementById('refCodeDisplay');
-        const refCode = currentReferralCode || getStorage(REF_CODE_V2_KEY) || '—';
+        const refCode = currentReferralCode;
         refCodeEl.textContent = refCode;
         refCodeEl.classList.add('blurred');
         const list = getReferralList();
@@ -931,28 +968,37 @@
             friendsContainer.innerHTML = '<p style="font-size:0.8rem; color:#888;">No friends invited yet.</p>';
         }
     }
+
     function handleReferralSubmit() {
-        const friendCode = document.getElementById('friendCodeInput').value.trim(); const errorEl = document.getElementById('referralError');
-        if (!friendCode || friendCode.length !== 12 || !/^[a-f0-9]+$/i.test(friendCode)) { errorEl.innerText = 'Invalid referral code.'; return; }
-        if (friendCode === currentReferralCode) { errorEl.innerText = 'You cannot refer yourself.'; return; }
-        const list = getReferralList();
-        if (list.some(r => r.referrer === friendCode && r.referred === currentReferralCode)) { errorEl.innerText = 'Already connected.'; return; }
-        if (addReferral(friendCode, currentReferralCode)) {
-            const reward = getReferralReward();
-            addToUserBalance(reward);
-            errorEl.innerText = '';
-            showModal('Connected & Rewarded', `✅ You earned ${reward.toFixed(2)} $FOOT instantly! Your friend will also receive ${reward.toFixed(2)} $FOOT when $FOOT goes live.`);
-            document.getElementById('friendCodeInput').value = '';
-            updateReferralUI();
-            updateMiningStats();
-            playGamepadSound();
-            saveUserToCloud();
-        } else {
-            errorEl.innerText = 'Connection failed.';
+        const friendCode = document.getElementById('friendCodeInput').value.trim();
+        const errorEl = document.getElementById('referralError');
+        if (!friendCode || friendCode.length !== 12 || !/^[a-f0-9]+$/i.test(friendCode)) {
+            errorEl.innerText = 'Invalid referral code.';
+            return;
         }
+        if (friendCode === currentReferralCode) {
+            errorEl.innerText = 'You cannot refer yourself.';
+            return;
+        }
+        // Use server-side referral
+        addReferralOnServer(friendCode, currentReferralCode).then(result => {
+            if (result.success) {
+                errorEl.innerText = '';
+                const reward = result.reward || getReferralReward();
+                showModal('Connected & Rewarded', `✅ You earned ${reward.toFixed(2)} $FOOT instantly! Your friend will also receive ${reward.toFixed(2)} $FOOT.`);
+                document.getElementById('friendCodeInput').value = '';
+                updateReferralUI();
+                updateMiningStats();
+                playGamepadSound();
+            } else {
+                errorEl.innerText = result.error || 'Connection failed.';
+            }
+        }).catch(() => {
+            errorEl.innerText = 'Connection failed.';
+        });
     }
 
-    // --- NEW: Auto-connect referral from invite link after wallet creation ---
+    // Auto-connect referral from invite link after wallet creation
     async function autoConnectReferral() {
         const storedRef = sessionStorage.getItem('invite_ref_code');
         if (!storedRef || !currentAccountId || !currentReferralCode) return;
@@ -961,23 +1007,18 @@
             sessionStorage.removeItem('invite_ref_code');
             return;
         }
-        // Check if already connected
+        // Check if already connected (local)
         const list = getReferralList();
         if (list.some(r => r.referrer === storedRef && r.referred === currentReferralCode)) {
             sessionStorage.removeItem('invite_ref_code');
             return;
         }
-        // Add referral
-        if (addReferral(storedRef, currentReferralCode)) {
-            const reward = getReferralReward();
-            addToUserBalance(reward);
-            updateReferralUI();
-            updateMiningStats();
-            saveUserToCloud();
-            // Show a subtle notification
+        // Perform server referral
+        const result = await addReferralOnServer(storedRef, currentReferralCode);
+        if (result.success) {
+            const reward = result.reward || getReferralReward();
             showModal('Welcome!', `You've been connected via invite link and received ${reward.toFixed(2)} $FOOT!`);
         }
-        // Clear the stored code so it doesn't apply again
         sessionStorage.removeItem('invite_ref_code');
     }
 
@@ -1090,7 +1131,6 @@
             document.getElementById('miningScreen').classList.remove('hidden');
             showModal('Wallet Created', `Your Account ID: <span style="font-family:monospace;">${result.accountId}</span><br>Seedphrase (save safely):<br><span style="font-family:monospace;">${result.seedphrase}</span>`);
             playGamepadSound();
-            // Auto-connect referral if the user came via an invite link
             await autoConnectReferral();
         } catch(e) { document.getElementById('createError').innerText = 'Error creating wallet.'; }
     });
@@ -1128,7 +1168,6 @@
         currentPlayerPublicId = derivePlayerPublicId(result.accountId);
         saveSession(result.accountId); initApp(result.accountId, result.backup);
         authScreen.classList.add('hidden'); appContainer.style.display = 'block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
-        // Optionally auto-connect for restored backups too
         await autoConnectReferral();
     });
 
@@ -1155,9 +1194,12 @@
             if (backupData.username) setStorage('profile_username', backupData.username);
             if (backupData.lastClaim) setStorage(LAST_CLAIM_KEY, backupData.lastClaim);
             if (backupData.referrals) {
+                // Merge backup referrals with local
                 const currentRefs = getReferralList();
                 backupData.referrals.forEach(r => {
-                    if (!currentRefs.some(c => c.referrer === r.referrer && c.referred === r.referred)) currentRefs.push(r);
+                    if (!currentRefs.some(c => c.referrer === r.referrer && c.referred === r.referred)) {
+                        currentRefs.push(r);
+                    }
                 });
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(currentRefs));
             }
@@ -1166,24 +1208,41 @@
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge (with server-authoritative claim time)
+        // Load cloud data and merge (with server-authoritative claim time and referral info)
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
                 const serverClaim = cloudData.lastServerClaim;
+                const referralInfo = cloudData.referralInfo;
 
+                // Merge balance and other data
                 if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
-                if (userData.referrals && Array.isArray(userData.referrals)) {
-                    localStorage.setItem(REFERRALS_KEY, JSON.stringify(userData.referrals));
-                }
                 if (userData.referralCode) {
                     setStorage(REF_CODE_V2_KEY, userData.referralCode);
                     currentReferralCode = userData.referralCode;
                 }
 
-                // --- Timer fix: use the most recent claim time ---
+                // Merge server referral list into local storage
+                if (referralInfo && referralInfo.referred) {
+                    const localList = getReferralList();
+                    referralInfo.referred.forEach(r => {
+                        const exists = localList.some(
+                            l => l.referrer === currentReferralCode && l.referred === r.referred
+                        );
+                        if (!exists) {
+                            localList.push({
+                                referrer: currentReferralCode,
+                                referred: r.referred,
+                                timestamp: r.timestamp
+                            });
+                        }
+                    });
+                    localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
+                }
+
+                // Timer fix: use the most recent claim time
                 const localTime = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
                 const cloudTime = parseInt(userData.lastClaim) || 0;
                 const serverTime = parseInt(serverClaim) || 0;
