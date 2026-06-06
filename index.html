@@ -209,6 +209,22 @@
         .custom-modal-box button { margin: 0.5rem; }
         .custom-modal-box textarea { width: 100%; background: #1a1a2a; border: 1px solid #ff5555; border-radius: 1rem; padding: 1rem; color: white; font-family: monospace; font-size: 0.8rem; resize: none; }
         .pre-sale-page { text-align: center; padding: 2rem; color: #ffcccc; }
+
+        /* ----- NEW: Inline button container for referral ----- */
+        .referral-buttons-row {
+            display: flex;
+            gap: 0.8rem;
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .referral-buttons-row .action-btn {
+            min-width: unset;
+            flex: 1 1 auto;
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+        }
+
         @media (max-width: 480px) {
             .blockchain-modal { width: 130px; height: 130px; }
             .mining-rate { font-size: 1.5rem; }
@@ -357,7 +373,11 @@
                     <div class="referral-box">
                         <p><strong>Connect with a Friend</strong><br>Enter their referral code below to earn <span style="color:#ffaaaa;">2 $FOOT</span> instantly.</p>
                         <div class="auth-input-group" style="margin-top:0.5rem;"><i class="fas fa-user-plus"></i><input type="text" id="friendCodeInput" placeholder="e.g., 7a3f9b2c4d1e" maxlength="12"></div>
-                        <button id="submitReferralBtn" class="action-btn" style="margin-top:0.5rem;">Connect & Earn</button>
+                        <!-- NEW: row with two buttons -->
+                        <div class="referral-buttons-row">
+                            <button id="submitReferralBtn" class="action-btn">Connect & Earn</button>
+                            <button id="copyInviteLinkBtn" class="action-btn">📋 Copy Invite Link</button>
+                        </div>
                         <div class="error-message" id="referralError"></div>
                     </div>
                     <div class="referral-box">
@@ -393,7 +413,7 @@
         </div>
     </div>
 
-    <!-- Ecosystem sub-screens -->
+    <!-- Ecosystem sub-screens (unchanged) -->
     <div id="stakeScreen" class="screen hidden">
         <div style="width:100%;max-width:800px;margin:0 auto;">
             <div class="stake-details">
@@ -749,7 +769,6 @@
 
             // Server success – reward added once, and only once
             addToUserBalance(result.reward);
-            // FIXED: Use setStorage to save with account-prefixed key
             setStorage(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
             canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
@@ -758,7 +777,6 @@
             updateCircularTimer();
             saveUserToCloud();
         } catch (e) {
-            // No local fallback – server sleeping or unreachable
             showModal('Server asleep', 'The server is waking up. Please wait a few seconds and try again.');
         }
     }
@@ -930,6 +948,21 @@
     document.getElementById('navReferral').addEventListener('click', ()=> { showScreen('referralScreen'); updateReferralUI(); playGamepadSound(); });
     document.getElementById('submitReferralBtn').addEventListener('click', handleReferralSubmit);
 
+    // ----- NEW: Copy Invite Link button -----
+    document.getElementById('copyInviteLinkBtn').addEventListener('click', async () => {
+        const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
+        if (!code) {
+            showModal('Error', 'No referral code found.');
+            return;
+        }
+        // Build invite link using current page's origin and path, plus ?ref=CODE
+        const base = window.location.origin + window.location.pathname;
+        const inviteUrl = `${base}?ref=${code}`;
+        const success = await copyToClipboard(inviteUrl);
+        showModal(success ? 'Copied' : 'Manual Copy',
+            success ? 'Invite link copied to clipboard!' : `Select and copy: <span style="font-family:monospace;">${inviteUrl}</span>`);
+    });
+
     document.getElementById('copyRefCodeBtn').addEventListener('click', async ()=>{
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code) { showModal('Error', 'No referral code found.'); return; }
@@ -1099,7 +1132,6 @@
                 const userData = cloudData.userData || {};
                 const serverClaim = cloudData.lastServerClaim;
 
-                // Merge balance, attributes, username, referrals
                 if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
