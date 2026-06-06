@@ -749,7 +749,8 @@
 
             // Server success – reward added once, and only once
             addToUserBalance(result.reward);
-            localStorage.setItem(LAST_CLAIM_KEY, Date.now().toString());
+            // FIXED: Use setStorage to save with account-prefixed key
+            setStorage(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
             canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
             showModal('Claimed', `🎉 You claimed ${result.reward} $FOOT!`);
