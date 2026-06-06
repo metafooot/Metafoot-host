@@ -687,7 +687,7 @@
         try {
             const res = await fetch(`${API_BASE}/load-user?accountId=${currentAccountId}`);
             const data = await res.json();
-            return data.userData;
+            return data;   // returns { userData, lastServerClaim }
         } catch (e) {
             console.warn('Cloud load failed', e);
             return null;
@@ -1093,15 +1093,33 @@
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge
+        // Load cloud data and merge (with server-authoritative claim time)
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
-                if (cloudData.balance !== undefined) setUserBalance(cloudData.balance);
-                if (cloudData.attributes) setStorage('player_training_attrs', JSON.stringify(cloudData.attributes));
-                if (cloudData.username) setStorage('profile_username', cloudData.username);
-                if (cloudData.lastClaim) setStorage(LAST_CLAIM_KEY, cloudData.lastClaim);
-                if (cloudData.referrals && Array.isArray(cloudData.referrals)) localStorage.setItem(REFERRALS_KEY, JSON.stringify(cloudData.referrals));
-                if (cloudData.referralCode) { setStorage(REF_CODE_V2_KEY, cloudData.referralCode); currentReferralCode = cloudData.referralCode; }
+                const userData = cloudData.userData || {};
+                const serverClaim = cloudData.lastServerClaim;
+
+                // Merge balance, attributes, username, referrals
+                if (userData.balance !== undefined) setUserBalance(userData.balance);
+                if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
+                if (userData.username) setStorage('profile_username', userData.username);
+                if (userData.referrals && Array.isArray(userData.referrals)) {
+                    localStorage.setItem(REFERRALS_KEY, JSON.stringify(userData.referrals));
+                }
+                if (userData.referralCode) {
+                    setStorage(REF_CODE_V2_KEY, userData.referralCode);
+                    currentReferralCode = userData.referralCode;
+                }
+
+                // --- Timer fix: use the most recent claim time ---
+                const localTime = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
+                const cloudTime = parseInt(userData.lastClaim) || 0;
+                const serverTime = parseInt(serverClaim) || 0;
+                const bestTime = Math.max(localTime, cloudTime, serverTime);
+                if (bestTime > 0) {
+                    setStorage(LAST_CLAIM_KEY, bestTime.toString());
+                }
+
                 updateMiningStats();
                 updateReferralUI();
                 loadAttributes();
