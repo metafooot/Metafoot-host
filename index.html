@@ -607,7 +607,7 @@
     const ENCRYPTED_SEED_KEY = 'metafoot_encrypted_seed';
     const SESSION_KEY = 'metafoot_session';
     const SESSION_EXPIRY_DAYS = 30;
-    const REFERRALS_KEY = 'metafoot_referrals_global'; // local copy for immediate UI updates
+    const REFERRALS_KEY = 'metafoot_referrals_global';
     const attributes = ['speed','shoot','power','intelligence','brilliance','accuracy'];
     let playerAttrs = {};
     const BASE_COST = 0.3;
@@ -722,13 +722,16 @@
         }
     }
 
-    // ---------- Global Server Sync (NO local fallback for claims/miner counting) ----------
+    // ---------- Global Server Sync (sends referralCode now) ----------
     async function registerMinerGlobally(accountId) {
         try {
+            const body = { accountId };
+            // also send referral code if known
+            if (currentReferralCode) body.referralCode = currentReferralCode;
             const res = await fetch(`${API_BASE}/register-miner`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId })
+                body: JSON.stringify(body)
             });
             const result = await res.json();
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
@@ -804,7 +807,7 @@
         currentAccountId = accountId;
         currentReferralCode = referralCode;
         currentPlayerPublicId = derivePlayerPublicId(accountId);
-        await registerMinerGlobally(accountId);
+        await registerMinerGlobally(accountId);   // now sends referralCode too
         return { accountId, seedphrase, referralCode };
     }
 
@@ -920,7 +923,7 @@
         return true;
     }
 
-    // New: server-side referral call
+    // Server-side referral call (fixed mapping ensures inviter gets credited)
     async function addReferralOnServer(referrerCode, referredCode) {
         try {
             const res = await fetch(`${API_BASE}/referral-add`, {
@@ -930,17 +933,15 @@
             });
             const result = await res.json();
             if (result.success) {
-                // Also update local storage for immediate display on this device
                 addReferralLocal(referrerCode, referredCode);
-                // If we are the inviter, we need to update our displayed balance
+                // If we are the inviter, add reward to our local balance immediately
                 if (currentReferralCode === referrerCode) {
-                    // The server already credited the inviter's cloud balance.
-                    // Next cloud sync will update our local balance.
-                    // To show it immediately, we can add the reward to our local balance.
                     const reward = result.reward || getReferralReward();
                     addToUserBalance(reward);
-                    saveUserToCloud(); // save the new balance to cloud too
+                    saveUserToCloud();
                 }
+                updateReferralUI();
+                updateMiningStats();
             }
             return result;
         } catch (e) {
@@ -954,11 +955,10 @@
     function updateReferralUI() {
         if (!currentAccountId || !currentReferralCode) return;
         const refCodeEl = document.getElementById('refCodeDisplay');
-        const refCode = currentReferralCode;
-        refCodeEl.textContent = refCode;
+        refCodeEl.textContent = currentReferralCode;
         refCodeEl.classList.add('blurred');
         const list = getReferralList();
-        const invitedFriends = list.filter(r => r.referrer === refCode);
+        const invitedFriends = list.filter(r => r.referrer === currentReferralCode);
         document.getElementById('pendingReferralAmount').innerText = (invitedFriends.length * getReferralReward()).toFixed(2);
         document.getElementById('referralCount').innerText = invitedFriends.length;
         const friendsContainer = document.getElementById('friendsListContainer');
@@ -980,16 +980,12 @@
             errorEl.innerText = 'You cannot refer yourself.';
             return;
         }
-        // Use server-side referral
         addReferralOnServer(friendCode, currentReferralCode).then(result => {
             if (result.success) {
                 errorEl.innerText = '';
                 const reward = result.reward || getReferralReward();
                 showModal('Connected & Rewarded', `✅ You earned ${reward.toFixed(2)} $FOOT instantly! Your friend will also receive ${reward.toFixed(2)} $FOOT.`);
                 document.getElementById('friendCodeInput').value = '';
-                updateReferralUI();
-                updateMiningStats();
-                playGamepadSound();
             } else {
                 errorEl.innerText = result.error || 'Connection failed.';
             }
@@ -1002,18 +998,15 @@
     async function autoConnectReferral() {
         const storedRef = sessionStorage.getItem('invite_ref_code');
         if (!storedRef || !currentAccountId || !currentReferralCode) return;
-        // Don't refer yourself
         if (storedRef === currentReferralCode) {
             sessionStorage.removeItem('invite_ref_code');
             return;
         }
-        // Check if already connected (local)
         const list = getReferralList();
         if (list.some(r => r.referrer === storedRef && r.referred === currentReferralCode)) {
             sessionStorage.removeItem('invite_ref_code');
             return;
         }
-        // Perform server referral
         const result = await addReferralOnServer(storedRef, currentReferralCode);
         if (result.success) {
             const reward = result.reward || getReferralReward();
@@ -1194,7 +1187,6 @@
             if (backupData.username) setStorage('profile_username', backupData.username);
             if (backupData.lastClaim) setStorage(LAST_CLAIM_KEY, backupData.lastClaim);
             if (backupData.referrals) {
-                // Merge backup referrals with local
                 const currentRefs = getReferralList();
                 backupData.referrals.forEach(r => {
                     if (!currentRefs.some(c => c.referrer === r.referrer && c.referred === r.referred)) {
@@ -1215,7 +1207,6 @@
                 const serverClaim = cloudData.lastServerClaim;
                 const referralInfo = cloudData.referralInfo;
 
-                // Merge balance and other data
                 if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
@@ -1242,7 +1233,6 @@
                     localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
                 }
 
-                // Timer fix: use the most recent claim time
                 const localTime = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
                 const cloudTime = parseInt(userData.lastClaim) || 0;
                 const serverTime = parseInt(serverClaim) || 0;
