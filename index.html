@@ -726,7 +726,6 @@
     async function registerMinerGlobally(accountId) {
         try {
             const body = { accountId };
-            // also send referral code if known
             if (currentReferralCode) body.referralCode = currentReferralCode;
             const res = await fetch(`${API_BASE}/register-miner`, {
                 method: 'POST',
@@ -807,7 +806,7 @@
         currentAccountId = accountId;
         currentReferralCode = referralCode;
         currentPlayerPublicId = derivePlayerPublicId(accountId);
-        await registerMinerGlobally(accountId);   // now sends referralCode too
+        await registerMinerGlobally(accountId);   // sends referralCode too
         return { accountId, seedphrase, referralCode };
     }
 
@@ -923,7 +922,7 @@
         return true;
     }
 
-    // Server-side referral call (fixed mapping ensures inviter gets credited)
+    // Server-side referral call (now fully working with mapping)
     async function addReferralOnServer(referrerCode, referredCode) {
         try {
             const res = await fetch(`${API_BASE}/referral-add`, {
@@ -1346,8 +1345,32 @@
         if(window._taskInterval) clearInterval(window._taskInterval); window._taskInterval = setInterval(renderTasks, 1000);
     }
 
-    // Global polling & auto-save
-    setInterval(refreshGlobalStats, 30000);
+    // Global polling & auto-save (also refreshes referral info for the inviter)
+    setInterval(async () => {
+        refreshGlobalStats();
+        // Refresh cloud data to pick up new referral rewards even if the inviter is already logged in
+        if (currentAccountId) {
+            const cloudData = await loadUserFromCloud();
+            if (cloudData && cloudData.referralInfo) {
+                const referralInfo = cloudData.referralInfo;
+                const localList = getReferralList();
+                let changed = false;
+                if (referralInfo.referred) {
+                    referralInfo.referred.forEach(r => {
+                        const exists = localList.some(l => l.referrer === currentReferralCode && l.referred === r.referred);
+                        if (!exists) {
+                            localList.push({ referrer: currentReferralCode, referred: r.referred, timestamp: r.timestamp });
+                            changed = true;
+                        }
+                    });
+                }
+                if (changed) {
+                    localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
+                    updateReferralUI();
+                }
+            }
+        }
+    }, 30000);
     setInterval(saveUserToCloud, 300000); // every 5 minutes
     refreshGlobalStats();
 
