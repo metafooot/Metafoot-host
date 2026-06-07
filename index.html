@@ -608,6 +608,7 @@
     const SESSION_KEY = 'metafoot_session';
     const SESSION_EXPIRY_DAYS = 30;
     const REFERRALS_KEY = 'metafoot_referrals_global';
+    const LAST_COLLECTED_REFERRAL_EARNINGS_KEY = 'metafoot_last_collected_ref_earnings';
     const attributes = ['speed','shoot','power','intelligence','brilliance','accuracy'];
     let playerAttrs = {};
     const BASE_COST = 0.3;
@@ -910,10 +911,17 @@
     function hideAllScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); }
     function showScreen(id) { hideAllScreens(); document.getElementById(id).classList.remove('hidden'); }
 
-    // Referrals – now fetches from server by referral code
+    // Referrals – now fetches from server by referral code and credits inviter locally
     function getReferralList() { const stored = localStorage.getItem(REFERRALS_KEY); return stored ? JSON.parse(stored) : []; }
+    function getLastCollectedReferralEarnings() {
+        const stored = localStorage.getItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY);
+        return stored ? parseFloat(stored) : 0;
+    }
+    function setLastCollectedReferralEarnings(amount) {
+        localStorage.setItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY, amount.toString());
+    }
 
-    // Fetch referral info from server and update local storage + UI
+    // Fetch referral info from server, credit uncollected earnings, update UI
     async function refreshReferralInfo() {
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code || code.length !== 12) return;
@@ -922,17 +930,25 @@
             const res = await fetch(`${API_BASE}/referral-info?code=${code}`);
             if (!res.ok) return;
             const info = await res.json();
-            // Update local storage with server data
             const friends = info.friends || [];
             const totalEarned = info.totalEarned || 0;
 
-            // Convert to local format for UI
+            // Update local storage with server data (friends list)
             const localList = friends.map(f => ({
                 referrer: code,
                 referred: f.referred,
                 timestamp: f.timestamp
             }));
             localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
+
+            // Credit any uncollected referral earnings to the user's balance
+            const lastCollected = getLastCollectedReferralEarnings();
+            if (totalEarned > lastCollected) {
+                const difference = totalEarned - lastCollected;
+                addToUserBalance(difference);
+                setLastCollectedReferralEarnings(totalEarned);
+                saveUserToCloud(); // save updated balance to cloud
+            }
 
             // Update UI
             document.getElementById('pendingReferralAmount').innerText = totalEarned.toFixed(2);
@@ -953,7 +969,7 @@
         const refCodeEl = document.getElementById('refCodeDisplay');
         refCodeEl.textContent = currentReferralCode;
         refCodeEl.classList.add('blurred');
-        // Update from local cache (which is synced with server by refreshReferralInfo)
+        // Use local cache (synced by refreshReferralInfo)
         const list = getReferralList();
         const invitedFriends = list.filter(r => r.referrer === currentReferralCode);
         document.getElementById('pendingReferralAmount').innerText = (invitedFriends.length * getReferralReward()).toFixed(2);
@@ -966,7 +982,7 @@
         }
     }
 
-    // Server-side referral call (now credits inviter by referral code directly)
+    // Server-side referral call – only records the referral, no balance credit
     async function addReferralOnServer(referrerCode, referredCode) {
         try {
             const res = await fetch(`${API_BASE}/referral-add`, {
@@ -981,13 +997,13 @@
                 list.push({ referrer: referrerCode, referred: referredCode, timestamp: Date.now() });
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(list));
 
-                // If we are the inviter, add reward to our local balance immediately
-                if (currentReferralCode === referrerCode) {
+                // The referred user gets their reward immediately (same as before)
+                if (currentReferralCode === referredCode) {
                     const reward = result.reward || getReferralReward();
                     addToUserBalance(reward);
                     saveUserToCloud();
                 }
-                // Refresh UI
+                // Refresh UI to show updated friends list
                 refreshReferralInfo();
                 updateMiningStats();
             }
@@ -1213,7 +1229,6 @@
             if (backupData.username) setStorage('profile_username', backupData.username);
             if (backupData.lastClaim) setStorage(LAST_CLAIM_KEY, backupData.lastClaim);
             if (backupData.referrals) {
-                // merge local referrals from backup
                 const currentRefs = getReferralList();
                 backupData.referrals.forEach(r => {
                     if (!currentRefs.some(c => c.referrer === r.referrer && c.referred === r.referred)) {
@@ -1227,7 +1242,7 @@
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge (with server-authoritative claim time)
+        // Load cloud data and merge
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
@@ -1257,9 +1272,9 @@
             }
         });
 
-        // Fetch referral info from server immediately and keep updating
+        // Fetch referral info immediately and keep updating
         refreshReferralInfo();
-        setInterval(refreshReferralInfo, 30000);  // update every 30 seconds
+        setInterval(refreshReferralInfo, 30000);  // every 30 seconds
     }
 
     // Music
