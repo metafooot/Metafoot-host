@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1"></script>
+    <!-- Google AdSense TEST code – replace with your real ID after approval -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3940256099942544" crossorigin="anonymous"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
         body { font-family: 'Inter', sans-serif; background: radial-gradient(circle at 20% 30%, #0a0a0a, #000000); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -225,6 +227,53 @@
             font-size: 0.9rem;
         }
 
+        /* Bonus ad button */
+        .bonus-btn {
+            background: linear-gradient(95deg, #228B22, #006400);
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 50px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .bonus-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .bonus-cooldown {
+            color: #ffaaaa;
+            font-size: 0.75rem;
+            margin-top: 0.3rem;
+        }
+
+        /* Ad modal specific */
+        .ad-modal-countdown {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ffffff;
+            margin: 1rem 0;
+        }
+        .ad-modal-progress {
+            background: #1a1a2a;
+            border-radius: 20px;
+            height: 12px;
+            width: 100%;
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+        .ad-modal-progress-bar {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #228B22, #00ff00);
+            transition: width 1s linear;
+        }
+
         @media (max-width: 480px) {
             .blockchain-modal { width: 130px; height: 130px; }
             .mining-rate { font-size: 1.5rem; }
@@ -352,6 +401,21 @@
             </div>
             <div class="mining-rate" id="miningRateDisplay">4 $FOOT / day</div>
             <div id="actionButtonsContainer" class="action-buttons"></div>
+            <!-- NEW: Bonus ad button -->
+            <button id="bonusAdBtn" class="bonus-btn" disabled>🎬 Watch ad for 0.1 $FOOT</button>
+            <div id="bonusCooldownText" class="bonus-cooldown"></div>
+            <!-- Test ad unit placeholder (below the bonus button) -->
+            <div style="margin: 1rem auto; max-width: 480px;">
+                <ins class="adsbygoogle"
+                     style="display:block"
+                     data-ad-client="ca-pub-3940256099942544"
+                     data-ad-slot="6303424663"
+                     data-ad-format="auto"
+                     data-full-width-responsive="true"></ins>
+                <script>
+                     (adsbygoogle = window.adsbygoogle || []).push({});
+                </script>
+            </div>
             <div class="slideshow-container" id="slideshowContainer">
                 <div class="slideshow-wrapper" id="slideshowWrapper"></div>
                 <div class="slideshow-timer" id="slideshowTimer">Next slide in 40s</div>
@@ -586,6 +650,19 @@
     <div class="custom-modal-box" id="customModalBox"></div>
 </div>
 
+<!-- Ad modal overlay (simulated rewarded ad) -->
+<div id="adModalOverlay" class="modal-overlay" style="z-index:4000;">
+    <div class="halving-modal" style="text-align:center;">
+        <h3 style="color:#ffaaaa;">📺 Watch a short ad to earn 0.1 $FOOT</h3>
+        <div class="ad-modal-countdown" id="adCountdownText">10</div>
+        <div class="ad-modal-progress">
+            <div class="ad-modal-progress-bar" id="adProgressBar"></div>
+        </div>
+        <button id="adClaimBtn" class="action-btn" style="margin-top:1rem;" disabled>⏳ Please wait...</button>
+        <button id="adCloseBtn" class="close-modal" style="margin-top:0.5rem;">Close</button>
+    </div>
+</div>
+
 <script>
 (function(){
     // ============ Node.js API Base URL ============
@@ -609,6 +686,7 @@
     const SESSION_EXPIRY_DAYS = 30;
     const REFERRALS_KEY = 'metafoot_referrals_global';
     const LAST_COLLECTED_REFERRAL_EARNINGS_KEY = 'metafoot_last_collected_ref_earnings';
+    const LAST_BONUS_CLAIM_KEY = 'metafoot_last_bonus_claim';   // for hourly ad bonus
     const attributes = ['speed','shoot','power','intelligence','brilliance','accuracy'];
     let playerAttrs = {};
     const BASE_COST = 0.3;
@@ -911,7 +989,7 @@
     function hideAllScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); }
     function showScreen(id) { hideAllScreens(); document.getElementById(id).classList.remove('hidden'); }
 
-    // Referrals – now fetches from server by referral code and credits inviter locally
+    // Referrals
     function getReferralList() { const stored = localStorage.getItem(REFERRALS_KEY); return stored ? JSON.parse(stored) : []; }
     function getLastCollectedReferralEarnings() {
         const stored = localStorage.getItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY);
@@ -921,7 +999,6 @@
         localStorage.setItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY, amount.toString());
     }
 
-    // Fetch referral info from server, credit uncollected earnings, update UI
     async function refreshReferralInfo() {
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code || code.length !== 12) return;
@@ -933,7 +1010,6 @@
             const friends = info.friends || [];
             const totalEarned = info.totalEarned || 0;
 
-            // Update local storage with server data (friends list)
             const localList = friends.map(f => ({
                 referrer: code,
                 referred: f.referred,
@@ -941,16 +1017,14 @@
             }));
             localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
 
-            // Credit any uncollected referral earnings to the user's balance
             const lastCollected = getLastCollectedReferralEarnings();
             if (totalEarned > lastCollected) {
                 const difference = totalEarned - lastCollected;
                 addToUserBalance(difference);
                 setLastCollectedReferralEarnings(totalEarned);
-                saveUserToCloud(); // save updated balance to cloud
+                saveUserToCloud();
             }
 
-            // Update UI
             document.getElementById('pendingReferralAmount').innerText = totalEarned.toFixed(2);
             document.getElementById('referralCount').innerText = friends.length;
             const friendsContainer = document.getElementById('friendsListContainer');
@@ -969,7 +1043,6 @@
         const refCodeEl = document.getElementById('refCodeDisplay');
         refCodeEl.textContent = currentReferralCode;
         refCodeEl.classList.add('blurred');
-        // Use local cache (synced by refreshReferralInfo)
         const list = getReferralList();
         const invitedFriends = list.filter(r => r.referrer === currentReferralCode);
         document.getElementById('pendingReferralAmount').innerText = (invitedFriends.length * getReferralReward()).toFixed(2);
@@ -982,7 +1055,6 @@
         }
     }
 
-    // Server-side referral call – only records the referral, no balance credit
     async function addReferralOnServer(referrerCode, referredCode) {
         try {
             const res = await fetch(`${API_BASE}/referral-add`, {
@@ -992,18 +1064,15 @@
             });
             const result = await res.json();
             if (result.success) {
-                // Update local cache
                 const list = getReferralList();
                 list.push({ referrer: referrerCode, referred: referredCode, timestamp: Date.now() });
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(list));
 
-                // The referred user gets their reward immediately (same as before)
                 if (currentReferralCode === referredCode) {
                     const reward = result.reward || getReferralReward();
                     addToUserBalance(reward);
                     saveUserToCloud();
                 }
-                // Refresh UI to show updated friends list
                 refreshReferralInfo();
                 updateMiningStats();
             }
@@ -1041,7 +1110,6 @@
         });
     }
 
-    // Auto-connect referral from invite link after wallet creation
     async function autoConnectReferral() {
         const storedRef = sessionStorage.getItem('invite_ref_code');
         if (!storedRef || !currentAccountId || !currentReferralCode) return;
@@ -1060,7 +1128,6 @@
     document.getElementById('navReferral').addEventListener('click', ()=> { showScreen('referralScreen'); refreshReferralInfo(); playGamepadSound(); });
     document.getElementById('submitReferralBtn').addEventListener('click', handleReferralSubmit);
 
-    // Copy Invite Link button
     document.getElementById('copyInviteLinkBtn').addEventListener('click', async () => {
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code) {
@@ -1143,6 +1210,92 @@
         const success = await copyToClipboard(code);
         showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
     });
+
+    // ---------------------- Bonus Ad (0.1 $FOOT per hour) ----------------------
+    const bonusBtn = document.getElementById('bonusAdBtn');
+    const bonusCooldownText = document.getElementById('bonusCooldownText');
+    const adModal = document.getElementById('adModalOverlay');
+    const adCountdownText = document.getElementById('adCountdownText');
+    const adProgressBar = document.getElementById('adProgressBar');
+    const adClaimBtn = document.getElementById('adClaimBtn');
+    const adCloseBtn = document.getElementById('adCloseBtn');
+    let adTimer = null;
+    let adSecondsLeft = 10;
+    let adReady = false;
+
+    function updateBonusButton() {
+        const last = getStorage(LAST_BONUS_CLAIM_KEY);
+        const now = Date.now();
+        const oneHour = 3600000;
+        if (last && (now - parseInt(last)) < oneHour) {
+            bonusBtn.disabled = true;
+            const remaining = oneHour - (now - parseInt(last));
+            const mins = Math.floor(remaining / 60000);
+            const secs = Math.floor((remaining % 60000) / 1000);
+            bonusCooldownText.innerText = `Next bonus in ${mins}m ${secs}s`;
+        } else {
+            bonusBtn.disabled = false;
+            bonusCooldownText.innerText = '';
+        }
+    }
+
+    function startAdCountdown() {
+        adSecondsLeft = 10;
+        adReady = false;
+        adClaimBtn.disabled = true;
+        adClaimBtn.innerText = '⏳ Please wait...';
+        adCountdownText.innerText = adSecondsLeft;
+        adProgressBar.style.width = '100%';
+        adModal.classList.add('active');
+
+        adTimer = setInterval(() => {
+            adSecondsLeft--;
+            adCountdownText.innerText = adSecondsLeft;
+            adProgressBar.style.width = (adSecondsLeft / 10 * 100) + '%';
+            if (adSecondsLeft <= 0) {
+                clearInterval(adTimer);
+                adTimer = null;
+                adReady = true;
+                adClaimBtn.disabled = false;
+                adClaimBtn.innerText = '🎉 Claim 0.1 $FOOT';
+                adCountdownText.innerText = '0';
+                adProgressBar.style.width = '0%';
+            }
+        }, 1000);
+    }
+
+    function stopAdCountdown() {
+        if (adTimer) {
+            clearInterval(adTimer);
+            adTimer = null;
+        }
+        adModal.classList.remove('active');
+    }
+
+    bonusBtn.addEventListener('click', () => {
+        if (bonusBtn.disabled) return;
+        startAdCountdown();
+    });
+
+    adClaimBtn.addEventListener('click', () => {
+        if (!adReady) return;
+        addToUserBalance(0.1);
+        setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
+        updateMiningStats();
+        updateBonusButton();
+        stopAdCountdown();
+        canvasConfetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#228B22', '#00ff00'] });
+        showModal('Bonus claimed', '🎉 You earned 0.1 $FOOT! Come back in an hour for another.');
+        playGamepadSound();
+    });
+
+    adCloseBtn.addEventListener('click', () => {
+        stopAdCountdown();
+    });
+
+    // Update bonus button every second to show cooldown
+    setInterval(updateBonusButton, 1000);
+    updateBonusButton();
 
     // Auth flow
     const loginForm = document.getElementById('loginForm');
@@ -1242,7 +1395,6 @@
         const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
@@ -1272,9 +1424,8 @@
             }
         });
 
-        // Fetch referral info immediately and keep updating
         refreshReferralInfo();
-        setInterval(refreshReferralInfo, 30000);  // every 30 seconds
+        setInterval(refreshReferralInfo, 30000);
     }
 
     // Music
