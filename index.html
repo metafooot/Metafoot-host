@@ -215,7 +215,7 @@
         .vision-details, .virtualcard-details, .updates-details, .stake-details, .pvp-details, .tournaments-details, .legal-details { color: #ffcccc; line-height: 1.5; }
         .section { background: rgba(5,10,22,0.7); border-radius: 1.5rem; padding: 1.2rem; margin-bottom: 1.2rem; border: 1px solid rgba(255,50,50,0.4); }
         .referral-box { background: rgba(0,0,0,0.3); border-radius: 1rem; padding: 1rem; margin: 1rem 0; }
-        .backup-btns { display: flex; gap: 1rem; margin-top: 1rem; }
+        .backup-btns { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
         .friends-list { max-height: 150px; overflow-y: auto; text-align: left; padding: 0; list-style: none; }
         .friends-list li { padding: 0.3rem 0; border-bottom: 1px solid rgba(255,80,80,0.3); font-size: 0.85rem; }
         .custom-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 3000; visibility: hidden; opacity: 0; transition: 0.3s; }
@@ -655,6 +655,7 @@
             <div class="backup-btns">
                 <button class="action-btn" id="exportBackupBtn"><i class="fas fa-copy"></i> Copy Backup</button>
                 <button class="action-btn" id="revealSeedBtn"><i class="fas fa-eye"></i> Reveal Seedphrase</button>
+                <button class="action-btn" id="copySeedBtn"><i class="fas fa-copy"></i> Copy Seedphrase</button>
             </div>
         </div>
     </div>
@@ -1375,6 +1376,13 @@
         if (!code) { showModal('Error', 'No referral code found.'); return; }
         const success = await copyToClipboard(code);
         showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
+    });
+
+    // New: Copy Seedphrase button
+    document.getElementById('copySeedBtn').addEventListener('click', async ()=>{
+        if (!currentSeedphrase) { showModal('Error', 'Seedphrase not loaded.'); return; }
+        const success = await copyToClipboard(currentSeedphrase);
+        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Seedphrase copied to clipboard.' : `Select and copy: <span style="font-family:monospace;">${currentSeedphrase}</span>`);
     });
 
     // ---------- initApp ----------
