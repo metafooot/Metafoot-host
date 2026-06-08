@@ -1293,7 +1293,6 @@
         stopAdCountdown();
     });
 
-    // Update bonus button every second to show cooldown
     setInterval(updateBonusButton, 1000);
     updateBonusButton();
 
@@ -1392,9 +1391,14 @@
             }
         }
         registerMinerGlobally(accountId);
-        const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance()); updateCircularTimer();
+        const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance());
+
+        // Use the best locally stored claim time immediately (before cloud data arrives)
+        const localTimeNow = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
+        if (localTimeNow > 0) updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
+        // Load cloud data and merge (with server-authoritative claim time)
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
