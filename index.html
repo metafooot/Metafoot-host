@@ -854,6 +854,7 @@
         return `${h}h ${m}m ${s}s`;
     }
 
+    // -------- Wallet creation / restore --------
     async function createWallet() {
         const seedphrase = generateSeedphrase();
         const accountId = deriveAccountId(seedphrase);
@@ -877,6 +878,7 @@
             localStorage.setItem(ENCRYPTED_SEED_KEY, backup.seedphrase);
             if (backup.referralCode) setStorage(REF_CODE_V2_KEY, backup.referralCode);
             else setStorage(REF_CODE_V2_KEY, secureRandomHex12());
+            currentReferralCode = getStorage(REF_CODE_V2_KEY);
             return { accountId, backup };
         } catch(e) { return { error:'invalid_backup' }; }
     }
@@ -886,6 +888,7 @@
         localStorage.setItem(ENCRYPTED_SEED_KEY, seedphrase);
         if (!getStorage(REF_CODE_V2_KEY)) setStorage(REF_CODE_V2_KEY, secureRandomHex12());
         currentSeedphrase = seedphrase;
+        currentReferralCode = getStorage(REF_CODE_V2_KEY);
         return accountId;
     }
 
@@ -901,6 +904,12 @@
         return null;
     }
     function clearSession() { localStorage.removeItem(SESSION_KEY); }
+
+    // Helper: load seedphrase from localStorage into variable
+    function loadSeedphraseFromStorage() {
+        const stored = localStorage.getItem(ENCRYPTED_SEED_KEY);
+        if (stored) currentSeedphrase = stored;
+    }
 
     const customModal = document.getElementById('customModalOverlay');
     const customModalBox = document.getElementById('customModalBox');
@@ -1291,11 +1300,13 @@
     document.getElementById('loginBtn').addEventListener('click', ()=>{
         const accId = document.getElementById('loginAccountId').value.trim().toLowerCase();
         if (!accId || accId.length!==12 || !/^[a-f0-9]+$/i.test(accId)) { document.getElementById('loginError').innerText='Invalid Account ID.'; return; }
-        if (localStorage.getItem(`${accId}_metafoot_balance`) === null) { document.getElementById('loginError').innerText='No wallet found for this ID.'; return; }
+        const testKey = `${accId}_metafoot_balance`;
+        if (localStorage.getItem(testKey) === null) { document.getElementById('loginError').innerText='No wallet found for this ID.'; return; }
         currentAccountId = accId;
         currentReferralCode = getStorage(REF_CODE_V2_KEY) || secureRandomHex12();
         if (!getStorage(REF_CODE_V2_KEY)) setStorage(REF_CODE_V2_KEY, currentReferralCode);
         currentPlayerPublicId = derivePlayerPublicId(accId);
+        loadSeedphraseFromStorage();  // <-- Load seedphrase from localStorage
         saveSession(accId);
         initApp(accId);
         authScreen.classList.add('hidden'); appContainer.style.display='block';
@@ -1326,7 +1337,7 @@
         } catch(e) { document.getElementById('seedRestoreError').innerText='Invalid seedphrase.'; }
     });
 
-    // ---------- loadProfile (must be defined before navigation listeners) ----------
+    // ---------- loadProfile ----------
     function loadProfile() {
         document.getElementById('profileUsername').value = getStorage('profile_username')||'';
         document.getElementById('profileBalance').innerText = getUserBalance().toLocaleString()+' $FOOT';
@@ -1378,7 +1389,7 @@
         showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
     });
 
-    // New: Copy Seedphrase button
+    // Copy Seedphrase button
     document.getElementById('copySeedBtn').addEventListener('click', async ()=>{
         if (!currentSeedphrase) { showModal('Error', 'Seedphrase not loaded.'); return; }
         const success = await copyToClipboard(currentSeedphrase);
@@ -1402,6 +1413,8 @@
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(currentRefs));
             }
         }
+        // Load seedphrase from localStorage (for login/session restore)
+        loadSeedphraseFromStorage();
         registerMinerGlobally(accountId);
         const lastRole = getStorage('last_active_role')||'player';
         setUIRole(lastRole);
@@ -1569,6 +1582,7 @@
     if (savedAccountId && localStorage.getItem(ENCRYPTED_SEED_KEY)) {
         currentAccountId = savedAccountId;
         currentPlayerPublicId = derivePlayerPublicId(savedAccountId);
+        loadSeedphraseFromStorage();   // <-- Load seedphrase for auto‑login
         initApp(currentAccountId);
         authScreen.classList.add('hidden'); appContainer.style.display='block';
         document.getElementById('miningScreen').classList.remove('hidden');
