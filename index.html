@@ -147,7 +147,6 @@
         .menu-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 150; visibility: hidden; opacity: 0; transition: 0.2s; }
         .menu-overlay.active { visibility: visible; opacity: 1; }
         .menu-item { background: rgba(30,30,50,0.8); border: 1px solid #ff5555; border-radius: 40px; padding: 0.8rem 1rem; color: #ffcccc; font-weight: 600; cursor: pointer; text-align: center; }
-        .halving-modal, .info-modal { background: #0f0f1a; border-radius: 2rem; padding: 1.5rem; width: 90%; max-width: 500px; border: 2px solid rgba(255,50,50,0.7); box-shadow: 0 0 8px #ff3333; animation: sparkleGlowRed 1.8s infinite alternate; color: #ffcccc; }
         .chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; }
         .chart-label { width: 70px; text-align: left; color: #ffcccc; }
         .chart-bar-container { flex: 1; background: #1a1a2a; border-radius: 12px; overflow: hidden; height: 28px; }
@@ -365,16 +364,6 @@
     </div>
     <div id="menuOverlay" class="menu-overlay"></div>
 
-    <!-- Modals -->
-    <div id="halvingModal" class="modal-overlay">
-        <div class="halving-modal">
-            <div class="halving-title">📉 HALVING MECHANISM</div>
-            <div id="halvingChartContainer"></div>
-            <div class="halving-note">• Reward halves when miners reach thresholds<br>• Current rate depends on total active miners</div>
-            <button class="close-modal" id="closeHalvingBtn">Close</button>
-        </div>
-    </div>
-
     <!-- Bottom Navigation -->
     <div class="task-nav">
         <div class="nav-item" id="navHome"><i class="fas fa-home"></i><span>Home</span></div>
@@ -478,12 +467,12 @@
 
     <!-- Pre-sale full screen -->
     <div id="preSaleScreen" class="screen hidden">
-        <div style="width:100%;max-width:800px;margin:0 auto; text-align:center;">
+        <div style="width:100%;max-width:800px;margin:0 auto; text-align:center; color: #ffffff;">
             <h1 style="color:#ffaaaa;">🚀 $FOOT Pre‑sale</h1>
-            <p style="color:#ffcccc; margin: 1rem 0;">Early supporters will be able to purchase $FOOT before public launch.</p>
-            <div class="section" style="text-align:left;">
+            <p style="margin: 1rem 0; color: #ffffff;">Early supporters will be able to purchase $FOOT before public launch.</p>
+            <div class="section" style="text-align:left; color: #ffffff;">
                 <p><strong>Benefits for early adopters:</strong></p>
-                <ul style="margin-left:1.5rem; margin-top:0.5rem;">
+                <ul style="margin-left:1.5rem; margin-top:0.5rem; color: #ffffff;">
                     <li>🎯 Bonus $FOOT to build your team.</li>
                     <li>⚡ Priority access to the Unity game.</li>
                     <li>🏟️ Exclusive in‑game stadium customisation.</li>
@@ -492,6 +481,16 @@
                 <p style="margin-top:1rem; font-size:0.9rem; color:#ffaaaa;">No guarantees – only participate with what you can afford. The pre‑sale date will be announced on our official channels.</p>
             </div>
             <button class="back-btn" id="backFromPreSaleBtn">Back to Home</button>
+        </div>
+    </div>
+
+    <!-- Halving full screen (replaces modal) -->
+    <div id="halvingScreen" class="screen hidden">
+        <div style="width:100%;max-width:600px;margin:0 auto; text-align:center;">
+            <h1 style="color:#ffaaaa;">📉 HALVING MECHANISM</h1>
+            <div id="halvingChartContainer"></div>
+            <div class="halving-note">• Reward halves when miners reach thresholds<br>• Current rate depends on total active miners</div>
+            <button class="back-btn" id="backFromHalvingBtn">Back to Home</button>
         </div>
     </div>
 
@@ -1326,6 +1325,19 @@
         } catch(e) { document.getElementById('seedRestoreError').innerText='Invalid seedphrase.'; }
     });
 
+    // ---------- loadProfile (must be defined before navigation listeners) ----------
+    function loadProfile() {
+        document.getElementById('profileUsername').value = getStorage('profile_username')||'';
+        document.getElementById('profileBalance').innerText = getUserBalance().toLocaleString()+' $FOOT';
+        const idEl = document.getElementById('profileAccountId');
+        idEl.textContent = currentAccountId||'—';
+        idEl.classList.add('blurred');
+        const refEl = document.getElementById('profileRefCode');
+        refEl.textContent = currentReferralCode||getStorage(REF_CODE_V2_KEY)||'—';
+        refEl.classList.add('blurred');
+    }
+
+    // ---------- initApp ----------
     function initApp(accountId, backupData = null) {
         currentAccountId = accountId;
         currentReferralCode = getStorage(REF_CODE_V2_KEY);
@@ -1429,10 +1441,8 @@
     // ---- Navigation event listeners ----
     // Hamburger menu (top left)
     document.getElementById('menuBtn').addEventListener('click', ()=>{
-        const sideMenu = document.getElementById('sideMenu');
-        const overlay = document.getElementById('menuOverlay');
-        sideMenu.classList.toggle('open');
-        overlay.classList.toggle('active');
+        document.getElementById('sideMenu').classList.toggle('open');
+        document.getElementById('menuOverlay').classList.toggle('active');
     });
     document.getElementById('menuOverlay').addEventListener('click', ()=>{
         document.getElementById('sideMenu').classList.remove('open');
@@ -1443,7 +1453,6 @@
     document.getElementById('navHome').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('navTask').addEventListener('click', ()=> { showScreen('taskScreen'); renderTasks(); playGamepadSound(); });
     document.getElementById('navEcosystem').addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); });
-    // Pre-sale now opens a full page
     document.getElementById('navPreSale').addEventListener('click', ()=> { showScreen('preSaleScreen'); playGamepadSound(); });
 
     // Side menu actions
@@ -1452,8 +1461,12 @@
         document.getElementById('whitepaperContent').innerHTML = `<h1>METAFOOT Whitepaper</h1><h2>The Football Metaverse Where Everyone Earns</h2><hr><h3>Executive Summary</h3><p>METAFOOT is a revolutionary football‑themed ecosystem that combines daily token mining, player training, team management, tournaments, and real‑world utility. The ecosystem is powered by the $FOOT token (total supply 500 million).</p><h3>Token Allocation</h3><table><tr><th>Allocation</th><th>%</th><th>Tokens</th></tr><tr><td>Airdrop</td><td>10%</td><td>50M</td></tr><tr><td>Pre‑sale</td><td>25%</td><td>125M</td></tr><tr><td>Team</td><td>15%</td><td>75M</td></tr><tr><td>Staking</td><td>15%</td><td>75M</td></tr><tr><td>Liquidity</td><td>10%</td><td>50M</td></tr><tr><td>Marketing</td><td>10%</td><td>50M</td></tr><tr><td>Treasury</td><td>15%</td><td>75M</td></tr></table><p>© METAFOOT</p>`;
         showScreen('whitepaperScreen'); playGamepadSound();
     });
+    // Halving now opens full screen
     document.querySelector('[data-action="halving"]').addEventListener('click', ()=> {
-        const t=[0,15000,100000,500000,1000000], r=[4,2,1,0.5,0.25]; document.getElementById('halvingChartContainer').innerHTML = t.map((v,i)=>`<div class="chart-row"><div class="chart-label">${v===0?'0':(v>=1e6?'1M':(v>=1e3?(v/1e3).toFixed(0)+'k':v))}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(r[i]/4)*100}%;"></div></div><div class="chart-value">${r[i]} $FOOT</div></div>`).join(''); document.getElementById('halvingModal').classList.add('active'); playGamepadSound();
+        const t=[0,15000,100000,500000,1000000], r=[4,2,1,0.5,0.25];
+        document.getElementById('halvingChartContainer').innerHTML = t.map((v,i)=>`<div class="chart-row"><div class="chart-label">${v===0?'0':(v>=1e6?'1M':(v>=1e3?(v/1e3).toFixed(0)+'k':v))}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(r[i]/4)*100}%;"></div></div><div class="chart-value">${r[i]} $FOOT</div></div>`).join('');
+        showScreen('halvingScreen');
+        playGamepadSound();
     });
     document.querySelector('[data-action="legal"]').addEventListener('click', ()=> { showScreen('legalScreen'); playGamepadSound(); });
     document.querySelector('[data-action="lock"]').addEventListener('click', ()=> {
@@ -1484,6 +1497,7 @@
     document.getElementById('pvpBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('tournamentsBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('backFromPreSaleBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('backFromHalvingBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
 
     // Tasks (renderTasks)
     function renderTasks() {
