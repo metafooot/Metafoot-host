@@ -1368,7 +1368,6 @@
 
         refreshReferralInfo();
         setInterval(refreshReferralInfo, 30000);
-        // Update badge on load and periodically
         updateUpdatesBadge();
         setInterval(updateUpdatesBadge, 60000);
     }
@@ -1391,6 +1390,9 @@
     function startPlaylist(){ if(audio && playing) return; playing=true; if(audio) audio.play().catch(()=>{}); else loadTrack(currentTrack); }
     function stopPlaylist(){ playing=false; if(audio) audio.pause(); }
     const musicBtn = document.getElementById('musicControl');
+    const musicIcon = document.getElementById('musicIcon');
+    const musicText = document.getElementById('musicText');
+    let musicActive = false;
     musicBtn.addEventListener('click', ()=>{
         if(musicActive){ stopPlaylist(); musicIcon.className='fas fa-volume-mute'; musicText.innerText='Play Music'; }
         else { startPlaylist(); musicIcon.className='fas fa-music'; musicText.innerText='Mute'; }
@@ -1423,6 +1425,63 @@
         showModal('🔐 Your Seedphrase', `<div style="background:#1a1a2a;border:1px solid #ff5555;border-radius:1rem;padding:1rem;font-family:monospace;color:#ffaaaa;word-break:break-all;text-align:left;">${currentSeedphrase}</div><p style="color:#ff8888;font-size:0.8rem;">⚠️ Never share this.</p>`);
         playGamepadSound();
     });
+
+    // ---- Fix: Re-add all missing navigation event listeners ----
+    // Bottom navigation
+    document.getElementById('navHome').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('navTask').addEventListener('click', ()=> { showScreen('taskScreen'); renderTasks(); playGamepadSound(); });
+    document.getElementById('navEcosystem').addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); });
+    document.getElementById('navPreSale').addEventListener('click', ()=> { document.getElementById('preSaleModal').classList.add('active'); playGamepadSound(); });
+
+    // Side menu actions
+    document.querySelector('[data-action="profile"]').addEventListener('click', ()=> { loadProfile(); showScreen('profileScreen'); playGamepadSound(); });
+    document.querySelector('[data-action="whitepaper"]').addEventListener('click', ()=> {
+        document.getElementById('whitepaperContent').innerHTML = `<h1>METAFOOT Whitepaper</h1><h2>The Football Metaverse Where Everyone Earns</h2><hr><h3>Executive Summary</h3><p>METAFOOT is a revolutionary football‑themed ecosystem that combines daily token mining, player training, team management, tournaments, and real‑world utility. The ecosystem is powered by the $FOOT token (total supply 500 million).</p><h3>Token Allocation</h3><table><tr><th>Allocation</th><th>%</th><th>Tokens</th></tr><tr><td>Airdrop</td><td>10%</td><td>50M</td></tr><tr><td>Pre‑sale</td><td>25%</td><td>125M</td></tr><tr><td>Team</td><td>15%</td><td>75M</td></tr><tr><td>Staking</td><td>15%</td><td>75M</td></tr><tr><td>Liquidity</td><td>10%</td><td>50M</td></tr><tr><td>Marketing</td><td>10%</td><td>50M</td></tr><tr><td>Treasury</td><td>15%</td><td>75M</td></tr></table><p>© METAFOOT</p>`;
+        showScreen('whitepaperScreen'); playGamepadSound();
+    });
+    document.querySelector('[data-action="halving"]').addEventListener('click', ()=> {
+        const t=[0,15000,100000,500000,1000000], r=[4,2,1,0.5,0.25]; document.getElementById('halvingChartContainer').innerHTML = t.map((v,i)=>`<div class="chart-row"><div class="chart-label">${v===0?'0':(v>=1e6?'1M':(v>=1e3?(v/1e3).toFixed(0)+'k':v))}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(r[i]/4)*100}%;"></div></div><div class="chart-value">${r[i]} $FOOT</div></div>`).join(''); document.getElementById('halvingModal').classList.add('active'); playGamepadSound();
+    });
+    document.querySelector('[data-action="legal"]').addEventListener('click', ()=> { showScreen('legalScreen'); playGamepadSound(); });
+    document.querySelector('[data-action="lock"]').addEventListener('click', ()=> {
+        if(window._taskInterval) clearInterval(window._taskInterval);
+        clearSession();
+        currentAccountId = null;
+        appContainer.style.display = 'none';
+        authScreen.classList.remove('hidden');
+        document.getElementById('loginAccountId').value = '';
+        document.getElementById('loginError').innerText = '';
+    });
+
+    // Ecosystem sub-screens
+    document.querySelectorAll('.info-card[data-screen]').forEach(card => {
+        card.addEventListener('click', ()=> {
+            const t = card.dataset.screen;
+            if (t==='stake') showScreen('stakeScreen');
+            else if (t==='pvp') showScreen('pvpScreen');
+            else if (t==='tournaments') showScreen('tournamentsScreen');
+            else if (t==='virtualCard') showScreen('virtualCardScreen');
+            playGamepadSound();
+        });
+    });
+    document.querySelectorAll('[id^="backFrom"]').forEach(b => b.addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); }));
+    document.getElementById('backFromUpdatesBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('backFromLegalBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('stakeBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('pvpBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('tournamentsBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+
+    // Tasks (renderTasks)
+    function renderTasks() {
+        const now = Date.now(); const tgLast = parseInt(getStorage(TG_LAST_KEY))||0; const xLast = parseInt(getStorage(X_LAST_KEY))||0;
+        const tgReady = (now - tgLast) >= COOLDOWN_MS; const xReady = (now - xLast) >= COOLDOWN_MS;
+        const taskList = document.getElementById('dailyTasksList');
+        taskList.innerHTML = `<li><span>📱 Visit Telegram Channel</span><button class="task-btn" id="telegramTaskBtn" ${tgReady?'':'disabled'}>${tgReady?'0.6 $FOOT':formatCooldown(tgLast)}</button></li><li><span>🐦 Visit X (Twitter)</span><button class="task-btn" id="xTaskBtn" ${xReady?'':'disabled'}>${xReady?'0.6 $FOOT':formatCooldown(xLast)}</button></li>`;
+        function formatCooldown(last) { const remaining = COOLDOWN_MS - (now - last); const mins = Math.floor(remaining / 60000); const secs = Math.floor((remaining % 60000) / 1000); return `${mins}:${secs.toString().padStart(2,'0')}`; }
+        document.getElementById('telegramTaskBtn')?.addEventListener('click', () => { if(!tgReady) return; window.open('https://t.me/metafoott','_blank'); setStorage(TG_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
+        document.getElementById('xTaskBtn')?.addEventListener('click', () => { if(!xReady) return; const start = Date.now(); window.location.href = 'twitter://user?screen_name=METAFOOTT'; setTimeout(()=>{ if(Date.now()-start<2000) window.open('https://x.com/METAFOOTT','_blank'); },500); setStorage(X_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
+        if(window._taskInterval) clearInterval(window._taskInterval); window._taskInterval = setInterval(renderTasks, 1000);
+    }
 
     // Simple global intervals
     setInterval(refreshGlobalStats, 30000);
