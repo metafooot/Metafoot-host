@@ -147,8 +147,7 @@
         .menu-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 150; visibility: hidden; opacity: 0; transition: 0.2s; }
         .menu-overlay.active { visibility: visible; opacity: 1; }
         .menu-item { background: rgba(30,30,50,0.8); border: 1px solid #ff5555; border-radius: 40px; padding: 0.8rem 1rem; color: #ffcccc; font-weight: 600; cursor: pointer; text-align: center; }
-        .halving-modal, .info-modal, .pre-sale-modal { background: #0f0f1a; border-radius: 2rem; padding: 1.5rem; width: 90%; max-width: 500px; border: 2px solid rgba(255,50,50,0.7); box-shadow: 0 0 8px #ff3333; animation: sparkleGlowRed 1.8s infinite alternate; color: #ffcccc; }
-        .pre-sale-modal .pre-sale-title { font-size: 1.3rem; font-weight: bold; color: #ffaaaa; margin-bottom: 1rem; text-align: center; }
+        .halving-modal, .info-modal { background: #0f0f1a; border-radius: 2rem; padding: 1.5rem; width: 90%; max-width: 500px; border: 2px solid rgba(255,50,50,0.7); box-shadow: 0 0 8px #ff3333; animation: sparkleGlowRed 1.8s infinite alternate; color: #ffcccc; }
         .chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; }
         .chart-label { width: 70px; text-align: left; color: #ffcccc; }
         .chart-bar-container { flex: 1; background: #1a1a2a; border-radius: 12px; overflow: hidden; height: 28px; }
@@ -226,7 +225,6 @@
         .custom-modal-box input { width: 100%; padding: 0.7rem; border-radius: 30px; border: 1px solid #ff5555; background: rgba(0,0,0,0.5); color: white; margin: 0.8rem 0; }
         .custom-modal-box button { margin: 0.5rem; }
         .custom-modal-box textarea { width: 100%; background: #1a1a2a; border: 1px solid #ff5555; border-radius: 1rem; padding: 1rem; color: white; font-family: monospace; font-size: 0.8rem; resize: none; }
-        .pre-sale-page { text-align: center; padding: 2rem; color: #ffcccc; }
 
         /* Inline button container for referral */
         .referral-buttons-row {
@@ -376,23 +374,6 @@
             <button class="close-modal" id="closeHalvingBtn">Close</button>
         </div>
     </div>
-    <div id="preSaleModal" class="modal-overlay">
-        <div class="pre-sale-modal" style="max-width:550px;">
-            <div class="pre-sale-title">🚀 $FOOT Pre‑sale (Coming Soon)</div>
-            <div class="pre-sale-page">
-                <p>Early supporters will be able to purchase $FOOT before public launch.</p>
-                <p><strong>Benefits for early adopters:</strong></p>
-                <ul style="text-align:left;margin:1rem auto;max-width:300px;">
-                    <li>🎯 Bonus $FOOT to build your team.</li>
-                    <li>⚡ Priority access to the Unity game.</li>
-                    <li>🏟️ Exclusive in‑game stadium customisation.</li>
-                    <li>📈 Potential long‑term value if the ecosystem grows.</li>
-                </ul>
-                <p style="font-size:0.9rem;">No guarantees – only participate with what you can afford. The pre‑sale date will be announced on our official channels.</p>
-            </div>
-            <button class="close-modal closePreSaleBtn">Close</button>
-        </div>
-    </div>
 
     <!-- Bottom Navigation -->
     <div class="task-nav">
@@ -492,6 +473,25 @@
                 <div class="info-card" data-screen="virtualCard"><div class="eco-logo"><i class="fas fa-credit-card"></i></div><div class="eco-title">$FOOT Virtual Card</div><div class="eco-desc">Spend your mined $FOOT anywhere · Real‑world utility</div></div>
                 <div class="info-card" id="visionCard"><div class="eco-logo"><i class="fas fa-chalkboard-user"></i></div><div class="eco-title">What METAFOOT is building</div><div class="eco-desc">Our mission, roadmap, and vision</div></div>
             </div>
+        </div>
+    </div>
+
+    <!-- Pre-sale full screen -->
+    <div id="preSaleScreen" class="screen hidden">
+        <div style="width:100%;max-width:800px;margin:0 auto; text-align:center;">
+            <h1 style="color:#ffaaaa;">🚀 $FOOT Pre‑sale</h1>
+            <p style="color:#ffcccc; margin: 1rem 0;">Early supporters will be able to purchase $FOOT before public launch.</p>
+            <div class="section" style="text-align:left;">
+                <p><strong>Benefits for early adopters:</strong></p>
+                <ul style="margin-left:1.5rem; margin-top:0.5rem;">
+                    <li>🎯 Bonus $FOOT to build your team.</li>
+                    <li>⚡ Priority access to the Unity game.</li>
+                    <li>🏟️ Exclusive in‑game stadium customisation.</li>
+                    <li>📈 Potential long‑term value if the ecosystem grows.</li>
+                </ul>
+                <p style="margin-top:1rem; font-size:0.9rem; color:#ffaaaa;">No guarantees – only participate with what you can afford. The pre‑sale date will be announced on our official channels.</p>
+            </div>
+            <button class="back-btn" id="backFromPreSaleBtn">Back to Home</button>
         </div>
     </div>
 
@@ -1426,12 +1426,25 @@
         playGamepadSound();
     });
 
-    // ---- Fix: Re-add all missing navigation event listeners ----
+    // ---- Navigation event listeners ----
+    // Hamburger menu (top left)
+    document.getElementById('menuBtn').addEventListener('click', ()=>{
+        const sideMenu = document.getElementById('sideMenu');
+        const overlay = document.getElementById('menuOverlay');
+        sideMenu.classList.toggle('open');
+        overlay.classList.toggle('active');
+    });
+    document.getElementById('menuOverlay').addEventListener('click', ()=>{
+        document.getElementById('sideMenu').classList.remove('open');
+        document.getElementById('menuOverlay').classList.remove('active');
+    });
+
     // Bottom navigation
     document.getElementById('navHome').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('navTask').addEventListener('click', ()=> { showScreen('taskScreen'); renderTasks(); playGamepadSound(); });
     document.getElementById('navEcosystem').addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); });
-    document.getElementById('navPreSale').addEventListener('click', ()=> { document.getElementById('preSaleModal').classList.add('active'); playGamepadSound(); });
+    // Pre-sale now opens a full page
+    document.getElementById('navPreSale').addEventListener('click', ()=> { showScreen('preSaleScreen'); playGamepadSound(); });
 
     // Side menu actions
     document.querySelector('[data-action="profile"]').addEventListener('click', ()=> { loadProfile(); showScreen('profileScreen'); playGamepadSound(); });
@@ -1470,6 +1483,7 @@
     document.getElementById('stakeBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('pvpBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
     document.getElementById('tournamentsBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
+    document.getElementById('backFromPreSaleBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
 
     // Tasks (renderTasks)
     function renderTasks() {
