@@ -391,7 +391,7 @@
             <div class="mining-rate" id="miningRateDisplay">4 $FOOT / day</div>
             <div id="actionButtonsContainer" class="action-buttons"></div>
             <!-- Bonus ad button -->
-            <button id="bonusAdBtn" class="bonus-btn" disabled>🎬 Watch ad for 0.1 $FOOT</button>
+            <button id="bonusAdBtn" class="bonus-btn" disabled>🎬 Watch ad for 0.5 $FOOT</button>
             <div id="bonusCooldownText" class="bonus-cooldown"></div>
             <!-- Test ad unit placeholder -->
             <div style="margin: 1rem auto; max-width: 480px;">
@@ -484,7 +484,7 @@
         </div>
     </div>
 
-    <!-- Halving full screen (replaces modal) -->
+    <!-- Halving full screen -->
     <div id="halvingScreen" class="screen hidden">
         <div style="width:100%;max-width:600px;margin:0 auto; text-align:center;">
             <h1 style="color:#ffaaaa;">📉 HALVING MECHANISM</h1>
@@ -667,7 +667,7 @@
 <!-- Ad modal overlay (simulated rewarded ad) -->
 <div id="adModalOverlay" class="modal-overlay" style="z-index:4000;">
     <div class="halving-modal" style="text-align:center;">
-        <h3 style="color:#ffaaaa;">📺 Watch a short ad to earn 0.1 $FOOT</h3>
+        <h3 style="color:#ffaaaa;">📺 Watch a short ad to earn 0.5 $FOOT</h3>
         <div class="ad-modal-countdown" id="adCountdownText">10</div>
         <div class="ad-modal-progress">
             <div class="ad-modal-progress-bar" id="adProgressBar"></div>
@@ -1237,7 +1237,7 @@
                 clearInterval(adTimer); adTimer = null;
                 adReady = true;
                 adClaimBtn.disabled = false;
-                adClaimBtn.innerText = '🎉 Claim 0.1 $FOOT';
+                adClaimBtn.innerText = '🎉 Claim 0.5 $FOOT';
                 adCountdownText.innerText = '0';
                 adProgressBar.style.width = '0%';
             }
@@ -1249,12 +1249,12 @@
     bonusBtn.addEventListener('click', ()=>{ if (!bonusBtn.disabled) startAdCountdown(); });
     adClaimBtn.addEventListener('click', ()=>{
         if (!adReady) return;
-        addToUserBalance(0.1);
+        addToUserBalance(0.5);  // Increased from 0.1 to 0.5
         setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
         updateMiningStats(); updateBonusButton();
         stopAdCountdown();
         canvasConfetti({ particleCount:80, spread:60, origin:{y:0.7}, colors:['#228B22','#00ff00'] });
-        showModal('Bonus claimed', '🎉 You earned 0.1 $FOOT! Come back in an hour for another.');
+        showModal('Bonus claimed', '🎉 You earned 0.5 $FOOT! Come back in an hour for another.');
         playGamepadSound();
     });
     adCloseBtn.addEventListener('click', stopAdCountdown);
@@ -1336,6 +1336,46 @@
         refEl.textContent = currentReferralCode||getStorage(REF_CODE_V2_KEY)||'—';
         refEl.classList.add('blurred');
     }
+
+    // ---------- Profile buttons event listeners ----------
+    let profileIdRevealed = false;
+    document.getElementById('revealProfileIdBtn').addEventListener('click', ()=>{
+        const idEl = document.getElementById('profileAccountId');
+        profileIdRevealed = !profileIdRevealed;
+        if (profileIdRevealed) {
+            idEl.classList.remove('blurred');
+            document.getElementById('revealProfileIdBtn').innerHTML = '<i class="fas fa-eye-slash"></i>';
+        } else {
+            idEl.classList.add('blurred');
+            document.getElementById('revealProfileIdBtn').innerHTML = '<i class="fas fa-eye"></i>';
+        }
+    });
+
+    document.getElementById('copyProfileIdBtn').addEventListener('click', async ()=>{
+        if (!currentAccountId) { showModal('Error', 'No Account ID loaded.'); return; }
+        const success = await copyToClipboard(currentAccountId);
+        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Account ID copied.' : `Select and copy: <span style="font-family:monospace;">${currentAccountId}</span>`);
+    });
+
+    let profileRefRevealed = false;
+    document.getElementById('revealProfileRefBtn').addEventListener('click', ()=>{
+        const refEl = document.getElementById('profileRefCode');
+        profileRefRevealed = !profileRefRevealed;
+        if (profileRefRevealed) {
+            refEl.classList.remove('blurred');
+            document.getElementById('revealProfileRefBtn').innerHTML = '<i class="fas fa-eye-slash"></i>';
+        } else {
+            refEl.classList.add('blurred');
+            document.getElementById('revealProfileRefBtn').innerHTML = '<i class="fas fa-eye"></i>';
+        }
+    });
+
+    document.getElementById('copyProfileRefBtn').addEventListener('click', async ()=>{
+        const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
+        if (!code) { showModal('Error', 'No referral code found.'); return; }
+        const success = await copyToClipboard(code);
+        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
+    });
 
     // ---------- initApp ----------
     function initApp(accountId, backupData = null) {
@@ -1461,7 +1501,6 @@
         document.getElementById('whitepaperContent').innerHTML = `<h1>METAFOOT Whitepaper</h1><h2>The Football Metaverse Where Everyone Earns</h2><hr><h3>Executive Summary</h3><p>METAFOOT is a revolutionary football‑themed ecosystem that combines daily token mining, player training, team management, tournaments, and real‑world utility. The ecosystem is powered by the $FOOT token (total supply 500 million).</p><h3>Token Allocation</h3><table><tr><th>Allocation</th><th>%</th><th>Tokens</th></tr><tr><td>Airdrop</td><td>10%</td><td>50M</td></tr><tr><td>Pre‑sale</td><td>25%</td><td>125M</td></tr><tr><td>Team</td><td>15%</td><td>75M</td></tr><tr><td>Staking</td><td>15%</td><td>75M</td></tr><tr><td>Liquidity</td><td>10%</td><td>50M</td></tr><tr><td>Marketing</td><td>10%</td><td>50M</td></tr><tr><td>Treasury</td><td>15%</td><td>75M</td></tr></table><p>© METAFOOT</p>`;
         showScreen('whitepaperScreen'); playGamepadSound();
     });
-    // Halving now opens full screen
     document.querySelector('[data-action="halving"]').addEventListener('click', ()=> {
         const t=[0,15000,100000,500000,1000000], r=[4,2,1,0.5,0.25];
         document.getElementById('halvingChartContainer').innerHTML = t.map((v,i)=>`<div class="chart-row"><div class="chart-label">${v===0?'0':(v>=1e6?'1M':(v>=1e3?(v/1e3).toFixed(0)+'k':v))}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(r[i]/4)*100}%;"></div></div><div class="chart-value">${r[i]} $FOOT</div></div>`).join('');
