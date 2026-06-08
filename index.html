@@ -1398,11 +1398,11 @@
         if (localTimeNow > 0) updateCircularTimer();
         if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge (with server-authoritative claim time)
+        // Load cloud data and merge (but DO NOT overwrite the claim timer with cloud data)
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
-                const serverClaim = cloudData.lastServerClaim;
+                // const serverClaim = cloudData.lastServerClaim;  // intentionally ignored to prevent timer reset
 
                 if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
@@ -1412,19 +1412,14 @@
                     currentReferralCode = userData.referralCode;
                 }
 
-                const localTime = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
-                const cloudTime = parseInt(userData.lastClaim) || 0;
-                const serverTime = parseInt(serverClaim) || 0;
-                const bestTime = Math.max(localTime, cloudTime, serverTime);
-                if (bestTime > 0) {
-                    setStorage(LAST_CLAIM_KEY, bestTime.toString());
-                }
+                // We skip merging lastClaim from cloud/server to keep the local timer intact
+                // The server still enforces the 24h rule at claim time
 
                 updateMiningStats();
                 updateReferralUI();
                 loadAttributes();
                 renderTrainingScreen();
-                updateCircularTimer();
+                // updateCircularTimer(); // already running
             }
         });
 
