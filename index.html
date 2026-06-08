@@ -95,8 +95,24 @@
             color: #ffaaaa;
             font-size: 1.2rem;
             cursor: pointer;
+            position: relative;
         }
         .updates-btn { font-size: 1.1rem; }
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff3333;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
         .wallet-display {
             background: rgba(0,0,0,0.7);
             border-radius: 40px;
@@ -331,7 +347,10 @@
                 <div class="menu-btn" id="menuBtn"><i class="fas fa-bars"></i></div>
             </div>
             <div class="right-controls">
-                <div class="updates-btn" id="updatesBtn"><i class="fas fa-bell"></i></div>
+                <div class="updates-btn" id="updatesBtn">
+                    <i class="fas fa-bell"></i>
+                    <span id="updatesBadge" class="badge" style="display:none;">0</span>
+                </div>
                 <div class="wallet-display"><i class="fas fa-wallet"></i> <span id="walletBalance">0</span> $FOOT</div>
                 <div id="musicControl" class="music-control"><i id="musicIcon" class="fas fa-music"></i> <span id="musicText">Play Music</span></div>
             </div>
@@ -401,10 +420,10 @@
             </div>
             <div class="mining-rate" id="miningRateDisplay">4 $FOOT / day</div>
             <div id="actionButtonsContainer" class="action-buttons"></div>
-            <!-- NEW: Bonus ad button -->
+            <!-- Bonus ad button -->
             <button id="bonusAdBtn" class="bonus-btn" disabled>🎬 Watch ad for 0.1 $FOOT</button>
             <div id="bonusCooldownText" class="bonus-cooldown"></div>
-            <!-- Test ad unit placeholder (below the bonus button) -->
+            <!-- Test ad unit placeholder -->
             <div style="margin: 1rem auto; max-width: 480px;">
                 <ins class="adsbygoogle"
                      style="display:block"
@@ -552,16 +571,12 @@
         </div>
     </div>
 
+    <!-- Dynamic Updates Screen -->
     <div id="updatesScreen" class="screen hidden">
         <div style="width:100%;max-width:800px;margin:0 auto;">
-            <div class="updates-details">
-                <h1 style="color:#ffaaaa;">🔔 Updates & Announcements</h1>
-                <div class="section"><div class="update-title">📢 April 18, 2026 – Virtual Card Page Launched</div><p>The $FOOT Virtual Card now has its own dedicated page.</p></div>
-                <div class="section"><div class="update-title">🏬 Physical Stores Announced</div><p>METAFOOT‑branded physical retail locations coming.</p></div>
-                <div class="section"><div class="update-title">🔄 Round‑Robin Staking Whitepaper Update</div><p>Full details on turn‑based staking pool.</p></div>
-                <div class="section"><div class="update-title">🐦 Follow Us on X & Telegram</div><p>· <a href="https://t.me/metafoott" target="_blank">Telegram</a><br>· <a href="#" id="updatesXLink">X (Twitter)</a></p></div>
-                <button class="back-btn" id="backFromUpdatesBtn">Back to Home</button>
-            </div>
+            <h1 style="color:#ffaaaa;">🔔 Updates & Announcements</h1>
+            <div id="dynamicUpdatesContainer"></div>
+            <button class="back-btn" id="backFromUpdatesBtn">Back to Home</button>
         </div>
     </div>
 
@@ -686,7 +701,8 @@
     const SESSION_EXPIRY_DAYS = 30;
     const REFERRALS_KEY = 'metafoot_referrals_global';
     const LAST_COLLECTED_REFERRAL_EARNINGS_KEY = 'metafoot_last_collected_ref_earnings';
-    const LAST_BONUS_CLAIM_KEY = 'metafoot_last_bonus_claim';   // for hourly ad bonus
+    const LAST_BONUS_CLAIM_KEY = 'metafoot_last_bonus_claim';
+    const LAST_SEEN_UPDATE_KEY = 'metafoot_last_seen_update';
     const attributes = ['speed','shoot','power','intelligence','brilliance','accuracy'];
     let playerAttrs = {};
     const BASE_COST = 0.3;
@@ -695,7 +711,7 @@
     const X_LAST_KEY = 'metafoot_last_x_claim';
     const COOLDOWN_MS = 30 * 60 * 1000;
 
-    // --- Read referral code from URL and store in sessionStorage ---
+    // --- Read referral code from URL ---
     (function() {
         const params = new URLSearchParams(window.location.search);
         const ref = params.get('ref');
@@ -738,11 +754,8 @@
             try {
                 document.execCommand('copy');
                 return true;
-            } catch (e) {
-                return false;
-            } finally {
-                document.body.removeChild(textarea);
-            }
+            } catch (e) { return false; }
+            finally { document.body.removeChild(textarea); }
         }
     }
 
@@ -779,42 +792,25 @@
                 referrals: getReferralList().filter(r => r.referrer === currentReferralCode || r.referred === currentReferralCode),
                 referralCode: currentReferralCode
             };
-            await fetch(`${API_BASE}/save-user`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId: currentAccountId, userData: backup })
-            });
-        } catch (e) {
-            console.warn('Cloud save failed', e);
-        }
+            await fetch(`${API_BASE}/save-user`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ accountId:currentAccountId, userData:backup }) });
+        } catch(e) { console.warn('Cloud save failed', e); }
     }
 
     async function loadUserFromCloud() {
         if (!currentAccountId) return null;
         try {
             const res = await fetch(`${API_BASE}/load-user?accountId=${currentAccountId}`);
-            const data = await res.json();
-            return data;   // returns { userData, lastServerClaim }
-        } catch (e) {
-            console.warn('Cloud load failed', e);
-            return null;
-        }
+            return await res.json();
+        } catch(e) { return null; }
     }
 
-    // ---------- Global Server Sync ----------
     async function registerMinerGlobally(accountId) {
         try {
-            const res = await fetch(`${API_BASE}/register-miner`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId })
-            });
+            const res = await fetch(`${API_BASE}/register-miner`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ accountId }) });
             const result = await res.json();
             localStorage.setItem(ACTIVE_MINERS_KEY, result.totalMiners);
             updateMiningStats();
-        } catch (e) {
-            updateMiningStats();
-        }
+        } catch(e) { updateMiningStats(); }
     }
 
     async function refreshGlobalStats() {
@@ -823,59 +819,44 @@
                 fetch(`${API_BASE}/total-miners`),
                 fetch(`${API_BASE}/total-distributed`)
             ]);
-            const minersData = await minersRes.json();
-            const distData = await distRes.json();
-            localStorage.setItem(ACTIVE_MINERS_KEY, minersData.totalMiners);
-            localStorage.setItem(TOTAL_DISTRIBUTED_KEY, distData.totalDistributed);
-        } catch (e) {}
+            localStorage.setItem(ACTIVE_MINERS_KEY, (await minersRes.json()).totalMiners);
+            localStorage.setItem(TOTAL_DISTRIBUTED_KEY, (await distRes.json()).totalDistributed);
+        } catch(e) {}
         updateMiningStats();
     }
 
-    // ---------- Claim reward (SERVER ONLY – no local fallback) ----------
     async function claimReward() {
         if (!currentAccountId) return;
-
         try {
-            const res = await fetch(`${API_BASE}/claim`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId: currentAccountId })
-            });
+            const res = await fetch(`${API_BASE}/claim`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ accountId:currentAccountId }) });
             const result = await res.json();
-
             if (result.error) {
                 if (result.error === 'Already claimed today') {
-                    const remaining = result.remainingMs;
-                    showModal('Already claimed', `You can claim again in ${formatTime(remaining)}.`);
-                } else {
-                    showModal('Claim failed', result.error);
-                }
+                    showModal('Already claimed', `You can claim again in ${formatTime(result.remainingMs)}.`);
+                } else showModal('Claim failed', result.error);
                 return;
             }
-
             addToUserBalance(result.reward);
             setStorage(LAST_CLAIM_KEY, Date.now().toString());
             updateMiningStats();
-            canvasConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#ff3333', '#ff8888'] });
+            canvasConfetti({ particleCount:120, spread:70, origin:{y:0.6}, colors:['#ff3333','#ff8888'] });
             showModal('Claimed', `🎉 You claimed ${result.reward} $FOOT!`);
             playGamepadSound();
             updateCircularTimer();
             saveUserToCloud();
-        } catch (e) {
-            showModal('Server asleep', 'The server is waking up. Please wait a few seconds and try again.');
-        }
+        } catch(e) { showModal('Server asleep','The server is waking up. Please wait a few seconds and try again.'); }
     }
 
     function formatTime(ms) {
-        const h = Math.floor(ms / 3600000);
-        const m = Math.floor((ms % 3600000) / 60000);
-        const s = Math.floor((ms % 60000) / 1000);
+        const h = Math.floor(ms/3600000);
+        const m = Math.floor((ms%3600000)/60000);
+        const s = Math.floor((ms%60000)/1000);
         return `${h}h ${m}m ${s}s`;
     }
 
-    // -------- Wallet creation & restore --------
     async function createWallet() {
-        const seedphrase = generateSeedphrase(); const accountId = deriveAccountId(seedphrase);
+        const seedphrase = generateSeedphrase();
+        const accountId = deriveAccountId(seedphrase);
         const referralCode = secureRandomHex12();
         localStorage.setItem(ENCRYPTED_SEED_KEY, seedphrase);
         setStorage(REF_CODE_V2_KEY, referralCode);
@@ -890,14 +871,14 @@
     async function restoreFromBackup(backupText) {
         try {
             const backup = JSON.parse(backupText);
-            if (!backup.seedphrase) return { error: 'invalid_backup' };
+            if (!backup.seedphrase) return { error:'invalid_backup' };
             currentSeedphrase = backup.seedphrase;
             const accountId = deriveAccountId(backup.seedphrase);
             localStorage.setItem(ENCRYPTED_SEED_KEY, backup.seedphrase);
             if (backup.referralCode) setStorage(REF_CODE_V2_KEY, backup.referralCode);
             else setStorage(REF_CODE_V2_KEY, secureRandomHex12());
             return { accountId, backup };
-        } catch(e) { return { error: 'invalid_backup' }; }
+        } catch(e) { return { error:'invalid_backup' }; }
     }
 
     async function restoreFromSeedphrase(seedphrase) {
@@ -908,8 +889,17 @@
         return accountId;
     }
 
-    function saveSession(accountId) { localStorage.setItem(SESSION_KEY, JSON.stringify({ accountId, expires: Date.now() + SESSION_EXPIRY_DAYS*86400000 })); }
-    function loadSession() { const s = localStorage.getItem(SESSION_KEY); if(!s) return null; try { const o = JSON.parse(s); if(o.expires && Date.now()<o.expires) return o.accountId; } catch(e){} localStorage.removeItem(SESSION_KEY); return null; }
+    function saveSession(accountId) { localStorage.setItem(SESSION_KEY, JSON.stringify({ accountId, expires:Date.now()+SESSION_EXPIRY_DAYS*86400000 })); }
+    function loadSession() {
+        const s = localStorage.getItem(SESSION_KEY);
+        if (!s) return null;
+        try {
+            const o = JSON.parse(s);
+            if (o.expires && Date.now()<o.expires) return o.accountId;
+        } catch(e) {}
+        localStorage.removeItem(SESSION_KEY);
+        return null;
+    }
     function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
     const customModal = document.getElementById('customModalOverlay');
@@ -921,20 +911,33 @@
     window.showModal = showModal;
 
     function getActiveMiners() { let m = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)); return isNaN(m)?0:m; }
-    function getCurrentRate() { const miners = getActiveMiners(); if(miners<15000) return 4; if(miners<100000) return 2; if(miners<500000) return 1; if(miners<1000000) return 0.5; return 0.25; }
+    function getCurrentRate() {
+        const miners = getActiveMiners();
+        if (miners<15000) return 4;
+        if (miners<100000) return 2;
+        if (miners<500000) return 1;
+        if (miners<1000000) return 0.5;
+        return 0.25;
+    }
     function getTotalDistributed() { let d = parseInt(localStorage.getItem(TOTAL_DISTRIBUTED_KEY)); return isNaN(d)?0:d; }
     function getUserBalance() { let b = parseFloat(getStorage(USER_BALANCE_KEY)); return isNaN(b)?0:b; }
     function setUserBalance(amount) { setStorage(USER_BALANCE_KEY, amount); updateWalletDisplay(); }
-    function addToUserBalance(amount) { setUserBalance(getUserBalance() + amount); }
+    function addToUserBalance(amount) { setUserBalance(getUserBalance()+amount); }
     function updateWalletDisplay() { document.getElementById('walletBalance').innerText = getUserBalance().toLocaleString(); }
     function updateMiningStats() { document.getElementById('miningRateDisplay').innerHTML = `${getCurrentRate()} $FOOT / day`; updateWalletDisplay(); }
     let timerInterval = null;
     function updateCircularTimer() {
-        const last = getStorage(LAST_CLAIM_KEY); const timer = document.getElementById('timerText');
-        if(!last) { timer.innerText = 'Ready!'; return; }
+        const last = getStorage(LAST_CLAIM_KEY);
+        const timer = document.getElementById('timerText');
+        if (!last) { timer.innerText = 'Ready!'; return; }
         const diff = (parseInt(last) + 86400000) - Date.now();
-        if(diff <= 0) timer.innerText = 'Ready!';
-        else { const h=Math.floor(diff/3600000); const m=Math.floor((diff%3600000)/60000); const s=Math.floor((diff%60000)/1000); timer.innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`; }
+        if (diff <= 0) timer.innerText = 'Ready!';
+        else {
+            const h = Math.floor(diff/3600000);
+            const m = Math.floor((diff%3600000)/60000);
+            const s = Math.floor((diff%60000)/1000);
+            timer.innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }
     }
 
     document.getElementById('claimCircleBtn').addEventListener('click', claimReward);
@@ -955,14 +958,14 @@
     // Role toggle
     const roleHeader = document.getElementById('roleHeader'), switchPlayerBtn = document.getElementById('switchToPlayerBtn'), switchManagerBtn = document.getElementById('switchToManagerBtn'), actionContainer = document.getElementById('actionButtonsContainer');
     function setUIRole(role) {
-        if(role==='player') { 
-            roleHeader.innerHTML = `<div class="role-badge">⚡ Player Mode</div><h1><i class="fas fa-futbol"></i> Player Mining</h1>`; 
-            switchPlayerBtn.classList.add('active'); switchManagerBtn.classList.remove('active'); 
-            actionContainer.innerHTML = '<button class="action-btn" id="trainBtn"><i class="fas fa-dumbbell"></i> Train Player</button>'; 
+        if(role==='player') {
+            roleHeader.innerHTML = `<div class="role-badge">⚡ Player Mode</div><h1><i class="fas fa-futbol"></i> Player Mining</h1>`;
+            switchPlayerBtn.classList.add('active'); switchManagerBtn.classList.remove('active');
+            actionContainer.innerHTML = '<button class="action-btn" id="trainBtn"><i class="fas fa-dumbbell"></i> Train Player</button>';
             document.getElementById('trainBtn').addEventListener('click', ()=> { openTrainingScreen(); playGamepadSound(); });
-        } else { 
-            roleHeader.innerHTML = `<div class="role-badge">👔 Manager Mode</div><h1><i class="fas fa-trophy"></i> Manager Mining</h1>`; 
-            switchManagerBtn.classList.add('active'); switchPlayerBtn.classList.remove('active'); 
+        } else {
+            roleHeader.innerHTML = `<div class="role-badge">👔 Manager Mode</div><h1><i class="fas fa-trophy"></i> Manager Mining</h1>`;
+            switchManagerBtn.classList.add('active'); switchPlayerBtn.classList.remove('active');
             actionContainer.innerHTML = '<button class="action-btn" id="buyPlayerBtn"><i class="fas fa-shopping-cart"></i> Buy Player</button><button class="action-btn" id="sellPlayerBtn"><i class="fas fa-exchange-alt"></i> Sell Player</button>';
             document.getElementById('buyPlayerBtn').addEventListener('click', ()=> { showScreen('buyPlayerScreen'); playGamepadSound(); });
             document.getElementById('sellPlayerBtn').addEventListener('click', ()=> { showScreen('sellPlayerScreen'); playGamepadSound(); });
@@ -973,76 +976,90 @@
     switchManagerBtn.addEventListener('click', ()=> { setUIRole('manager'); playGamepadSound(); });
 
     function getPlayerId() { return currentPlayerPublicId; }
-    function getUpgradeCost(level) { return BASE_COST * Math.pow(2, Math.floor(level / TIER_SIZE)); }
-    function getTotalSpent(attrs) { let total = 0; for (let attr in attrs) for (let l=0; l<attrs[attr]; l++) total += getUpgradeCost(l); return total; }
+    function getUpgradeCost(level) { return BASE_COST * Math.pow(2, Math.floor(level/TIER_SIZE)); }
+    function getTotalSpent(attrs) { let total=0; for (let attr in attrs) for (let l=0; l<attrs[attr]; l++) total += getUpgradeCost(l); return total; }
     function loadAttributes() { const stored = getStorage('player_training_attrs'); playerAttrs = stored ? JSON.parse(stored) : Object.fromEntries(attributes.map(a => [a,0])); }
     function saveAttributes() { setStorage('player_training_attrs', JSON.stringify(playerAttrs)); }
     function renderTrainingScreen() {
-        const balance = getUserBalance(); document.getElementById('trainingBalance').innerText = balance.toLocaleString(); document.getElementById('playerIdDisplay').innerText = `ID: ${getPlayerId()}`; const worth = getTotalSpent(playerAttrs); document.getElementById('playerWorthDisplay').innerHTML = `Worth: ${worth.toFixed(1)} $FOOT`; document.getElementById('totalSpentDisplay').innerText = worth.toFixed(1);
-        const container = document.getElementById('trainingAttributesContainer'); container.innerHTML = '';
-        attributes.forEach(attr => { const val = playerAttrs[attr]||0; const percent = Math.min(100,val)+'%'; const nextCost = val<100 ? getUpgradeCost(val) : null; const row = document.createElement('div'); row.className = 'attribute-row'; row.innerHTML = `<div class="attribute-name">${attr.charAt(0).toUpperCase()+attr.slice(1)}</div><div class="bar-container"><div class="bar-fill" style="width:${percent};"></div></div><div class="attribute-value">${val}</div>${nextCost ? `<button class="upgrade-btn" data-attr="${attr}" data-cost="${nextCost.toFixed(2)}">+1 (${nextCost.toFixed(2)})</button>` : '<button class="upgrade-btn" disabled>Max</button>'}`; container.appendChild(row); });
-        document.querySelectorAll('.upgrade-btn:not([disabled])').forEach(btn => { btn.addEventListener('click', () => { const attr = btn.dataset.attr; const cost = parseFloat(btn.dataset.cost); if (getUserBalance() >= cost) { addToUserBalance(-cost); playerAttrs[attr] = (playerAttrs[attr]||0)+1; saveAttributes(); renderTrainingScreen(); updateMiningStats(); playGamepadSound(); saveUserToCloud(); } else showModal('Need more $FOOT', `You need ${cost.toFixed(2)} $FOOT.`); }); });
-        const tiers = [0,20,40,60,80,100]; const maxCost = getUpgradeCost(99); document.getElementById('trainingChartInner').innerHTML = tiers.map(lvl => { const cost = lvl<100 ? getUpgradeCost(lvl) : getUpgradeCost(99); return `<div class="chart-row"><div class="chart-label">Lvl ${lvl}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(cost/maxCost)*100}%;"></div></div><div class="chart-value">${cost.toFixed(2)}</div></div>`; }).join('');
+        const balance = getUserBalance();
+        document.getElementById('trainingBalance').innerText = balance.toLocaleString();
+        document.getElementById('playerIdDisplay').innerText = `ID: ${getPlayerId()}`;
+        const worth = getTotalSpent(playerAttrs);
+        document.getElementById('playerWorthDisplay').innerHTML = `Worth: ${worth.toFixed(1)} $FOOT`;
+        document.getElementById('totalSpentDisplay').innerText = worth.toFixed(1);
+        const container = document.getElementById('trainingAttributesContainer');
+        container.innerHTML = '';
+        attributes.forEach(attr => {
+            const val = playerAttrs[attr]||0;
+            const percent = Math.min(100,val)+'%';
+            const nextCost = val<100 ? getUpgradeCost(val) : null;
+            const row = document.createElement('div');
+            row.className = 'attribute-row';
+            row.innerHTML = `<div class="attribute-name">${attr.charAt(0).toUpperCase()+attr.slice(1)}</div><div class="bar-container"><div class="bar-fill" style="width:${percent};"></div></div><div class="attribute-value">${val}</div>${nextCost ? `<button class="upgrade-btn" data-attr="${attr}" data-cost="${nextCost.toFixed(2)}">+1 (${nextCost.toFixed(2)})</button>` : '<button class="upgrade-btn" disabled>Max</button>'}`;
+            container.appendChild(row);
+        });
+        document.querySelectorAll('.upgrade-btn:not([disabled])').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const attr = btn.dataset.attr;
+                const cost = parseFloat(btn.dataset.cost);
+                if (getUserBalance() >= cost) {
+                    addToUserBalance(-cost);
+                    playerAttrs[attr] = (playerAttrs[attr]||0)+1;
+                    saveAttributes();
+                    renderTrainingScreen();
+                    updateMiningStats();
+                    playGamepadSound();
+                    saveUserToCloud();
+                } else showModal('Need more $FOOT', `You need ${cost.toFixed(2)} $FOOT.`);
+            });
+        });
+        const tiers = [0,20,40,60,80,100];
+        const maxCost = getUpgradeCost(99);
+        document.getElementById('trainingChartInner').innerHTML = tiers.map(lvl => {
+            const cost = lvl<100 ? getUpgradeCost(lvl) : getUpgradeCost(99);
+            return `<div class="chart-row"><div class="chart-label">Lvl ${lvl}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(cost/maxCost)*100}%;"></div></div><div class="chart-value">${cost.toFixed(2)}</div></div>`;
+        }).join('');
     }
     function openTrainingScreen() { loadAttributes(); renderTrainingScreen(); hideAllScreens(); document.getElementById('trainingScreen').classList.remove('hidden'); }
 
     function hideAllScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); }
     function showScreen(id) { hideAllScreens(); document.getElementById(id).classList.remove('hidden'); }
 
-    // Referrals
+    // ---------- Referrals ----------
     function getReferralList() { const stored = localStorage.getItem(REFERRALS_KEY); return stored ? JSON.parse(stored) : []; }
-    function getLastCollectedReferralEarnings() {
-        const stored = localStorage.getItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY);
-        return stored ? parseFloat(stored) : 0;
-    }
-    function setLastCollectedReferralEarnings(amount) {
-        localStorage.setItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY, amount.toString());
-    }
+    function getLastCollectedReferralEarnings() { const stored = localStorage.getItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY); return stored ? parseFloat(stored) : 0; }
+    function setLastCollectedReferralEarnings(amount) { localStorage.setItem(LAST_COLLECTED_REFERRAL_EARNINGS_KEY, amount.toString()); }
 
     async function refreshReferralInfo() {
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
         if (!code || code.length !== 12) return;
-
         try {
             const res = await fetch(`${API_BASE}/referral-info?code=${code}`);
             if (!res.ok) return;
             const info = await res.json();
             const friends = info.friends || [];
             const totalEarned = info.totalEarned || 0;
-
-            const localList = friends.map(f => ({
-                referrer: code,
-                referred: f.referred,
-                timestamp: f.timestamp
-            }));
+            const localList = friends.map(f => ({ referrer:code, referred:f.referred, timestamp:f.timestamp }));
             localStorage.setItem(REFERRALS_KEY, JSON.stringify(localList));
-
             const lastCollected = getLastCollectedReferralEarnings();
             if (totalEarned > lastCollected) {
-                const difference = totalEarned - lastCollected;
-                addToUserBalance(difference);
+                addToUserBalance(totalEarned - lastCollected);
                 setLastCollectedReferralEarnings(totalEarned);
                 saveUserToCloud();
             }
-
             document.getElementById('pendingReferralAmount').innerText = totalEarned.toFixed(2);
             document.getElementById('referralCount').innerText = friends.length;
             const friendsContainer = document.getElementById('friendsListContainer');
             if (friends.length > 0) {
                 friendsContainer.innerHTML = '<strong>Invited Friends:</strong><ul class="friends-list">' + friends.map(f => `<li>${f.referred} <small style="color:#888;">(${new Date(f.timestamp).toLocaleDateString()})</small></li>`).join('') + '</ul>';
-            } else {
-                friendsContainer.innerHTML = '<p style="font-size:0.8rem; color:#888;">No friends invited yet.</p>';
-            }
-        } catch (e) {
-            console.warn('Could not refresh referral info', e);
-        }
+            } else friendsContainer.innerHTML = '<p style="font-size:0.8rem; color:#888;">No friends invited yet.</p>';
+        } catch(e) {}
     }
 
     function updateReferralUI() {
         if (!currentAccountId || !currentReferralCode) return;
-        const refCodeEl = document.getElementById('refCodeDisplay');
-        refCodeEl.textContent = currentReferralCode;
-        refCodeEl.classList.add('blurred');
+        document.getElementById('refCodeDisplay').textContent = currentReferralCode;
+        document.getElementById('refCodeDisplay').classList.add('blurred');
         const list = getReferralList();
         const invitedFriends = list.filter(r => r.referrer === currentReferralCode);
         document.getElementById('pendingReferralAmount').innerText = (invitedFriends.length * getReferralReward()).toFixed(2);
@@ -1050,168 +1067,138 @@
         const friendsContainer = document.getElementById('friendsListContainer');
         if (invitedFriends.length > 0) {
             friendsContainer.innerHTML = '<strong>Invited Friends:</strong><ul class="friends-list">' + invitedFriends.map(f => `<li>${f.referred} <small style="color:#888;">(${new Date(f.timestamp).toLocaleDateString()})</small></li>`).join('') + '</ul>';
-        } else {
-            friendsContainer.innerHTML = '<p style="font-size:0.8rem; color:#888;">No friends invited yet.</p>';
-        }
+        } else friendsContainer.innerHTML = '<p style="font-size:0.8rem; color:#888;">No friends invited yet.</p>';
     }
 
     async function addReferralOnServer(referrerCode, referredCode) {
         try {
-            const res = await fetch(`${API_BASE}/referral-add`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ referrerCode, referredCode })
-            });
+            const res = await fetch(`${API_BASE}/referral-add`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ referrerCode, referredCode }) });
             const result = await res.json();
             if (result.success) {
                 const list = getReferralList();
-                list.push({ referrer: referrerCode, referred: referredCode, timestamp: Date.now() });
+                list.push({ referrer:referrerCode, referred:referredCode, timestamp:Date.now() });
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(list));
-
                 if (currentReferralCode === referredCode) {
-                    const reward = result.reward || getReferralReward();
-                    addToUserBalance(reward);
+                    addToUserBalance(result.reward||getReferralReward());
                     saveUserToCloud();
                 }
                 refreshReferralInfo();
                 updateMiningStats();
             }
             return result;
-        } catch (e) {
-            console.warn('Referral server call failed', e);
-            return { error: 'Server unreachable' };
-        }
+        } catch(e) { return { error:'Server unreachable' }; }
     }
 
-    function getReferralReward() { const miners = getActiveMiners(); const baseReward = 2; if (miners < 15000) return baseReward; if (miners < 100000) return baseReward / 2; if (miners < 500000) return baseReward / 4; if (miners < 1000000) return baseReward / 8; return baseReward / 16; }
+    function getReferralReward() {
+        const miners = getActiveMiners();
+        const base = 2;
+        if (miners<15000) return base;
+        if (miners<100000) return base/2;
+        if (miners<500000) return base/4;
+        if (miners<1000000) return base/8;
+        return base/16;
+    }
 
     function handleReferralSubmit() {
         const friendCode = document.getElementById('friendCodeInput').value.trim();
         const errorEl = document.getElementById('referralError');
-        if (!friendCode || friendCode.length !== 12 || !/^[a-f0-9]+$/i.test(friendCode)) {
-            errorEl.innerText = 'Invalid referral code.';
-            return;
-        }
-        if (friendCode === currentReferralCode) {
-            errorEl.innerText = 'You cannot refer yourself.';
-            return;
-        }
+        if (!friendCode || friendCode.length!==12 || !/^[a-f0-9]+$/i.test(friendCode)) { errorEl.innerText = 'Invalid referral code.'; return; }
+        if (friendCode === currentReferralCode) { errorEl.innerText = 'You cannot refer yourself.'; return; }
         addReferralOnServer(friendCode, currentReferralCode).then(result => {
             if (result.success) {
                 errorEl.innerText = '';
-                const reward = result.reward || getReferralReward();
-                showModal('Connected & Rewarded', `✅ You earned ${reward.toFixed(2)} $FOOT instantly! Your friend will also receive ${reward.toFixed(2)} $FOOT.`);
+                showModal('Connected & Rewarded', `✅ You earned ${(result.reward||getReferralReward()).toFixed(2)} $FOOT instantly! Your friend will also receive ${(result.reward||getReferralReward()).toFixed(2)} $FOOT.`);
                 document.getElementById('friendCodeInput').value = '';
-            } else {
-                errorEl.innerText = result.error || 'Connection failed.';
-            }
-        }).catch(() => {
-            errorEl.innerText = 'Connection failed.';
-        });
+            } else errorEl.innerText = result.error || 'Connection failed.';
+        }).catch(() => { errorEl.innerText = 'Connection failed.'; });
     }
 
     async function autoConnectReferral() {
         const storedRef = sessionStorage.getItem('invite_ref_code');
         if (!storedRef || !currentAccountId || !currentReferralCode) return;
-        if (storedRef === currentReferralCode) {
-            sessionStorage.removeItem('invite_ref_code');
-            return;
-        }
+        if (storedRef === currentReferralCode) { sessionStorage.removeItem('invite_ref_code'); return; }
         const result = await addReferralOnServer(storedRef, currentReferralCode);
-        if (result.success) {
-            const reward = result.reward || getReferralReward();
-            showModal('Welcome!', `You've been connected via invite link and received ${reward.toFixed(2)} $FOOT!`);
-        }
+        if (result.success) showModal('Welcome!', `You've been connected via invite link and received ${(result.reward||getReferralReward()).toFixed(2)} $FOOT!`);
         sessionStorage.removeItem('invite_ref_code');
     }
 
     document.getElementById('navReferral').addEventListener('click', ()=> { showScreen('referralScreen'); refreshReferralInfo(); playGamepadSound(); });
     document.getElementById('submitReferralBtn').addEventListener('click', handleReferralSubmit);
 
-    document.getElementById('copyInviteLinkBtn').addEventListener('click', async () => {
+    document.getElementById('copyInviteLinkBtn').addEventListener('click', async ()=>{
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
-        if (!code) {
-            showModal('Error', 'No referral code found.');
-            return;
-        }
-        const base = window.location.origin + window.location.pathname;
-        const inviteUrl = `${base}?ref=${code}`;
+        if (!code) { showModal('Error','No referral code found.'); return; }
+        const inviteUrl = `${window.location.origin}${window.location.pathname}?ref=${code}`;
         const success = await copyToClipboard(inviteUrl);
-        showModal(success ? 'Copied' : 'Manual Copy',
-            success ? 'Invite link copied to clipboard!' : `Select and copy: <span style="font-family:monospace;">${inviteUrl}</span>`);
+        showModal(success?'Copied':'Manual Copy', success?'Invite link copied to clipboard!':`Select and copy: <span style="font-family:monospace;">${inviteUrl}</span>`);
     });
 
     document.getElementById('copyRefCodeBtn').addEventListener('click', async ()=>{
         const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
-        if (!code) { showModal('Error', 'No referral code found.'); return; }
+        if (!code) { showModal('Error','No referral code found.'); return; }
         const success = await copyToClipboard(code);
-        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied to clipboard.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
+        showModal(success?'Copied':'Manual Copy', success?'Referral code copied.':`Select and copy: <span style="font-family:monospace;">${code}</span>`);
     });
 
-    let refRevealState = false;
-    document.getElementById('revealRefCodeBtn').addEventListener('click', ()=>{
-        const refEl = document.getElementById('refCodeDisplay');
-        refRevealState = !refRevealState;
-        if (refRevealState) {
-            refEl.classList.remove('blurred');
-            document.getElementById('revealRefCodeBtn').innerHTML = '<i class="fas fa-eye-slash"></i>';
-        } else {
-            refEl.classList.add('blurred');
-            document.getElementById('revealRefCodeBtn').innerHTML = '<i class="fas fa-eye"></i>';
-        }
-    });
-
-    function loadProfile() {
-        document.getElementById('profileUsername').value = getStorage('profile_username')||'';
-        document.getElementById('profileBalance').innerText = getUserBalance().toLocaleString()+' $FOOT';
-        const idEl = document.getElementById('profileAccountId');
-        idEl.textContent = currentAccountId||'—';
-        idEl.classList.add('blurred');
-        const refEl = document.getElementById('profileRefCode');
-        refEl.textContent = currentReferralCode||getStorage(REF_CODE_V2_KEY)||'—';
-        refEl.classList.add('blurred');
+    // ---------- Updates & Bell Badge ----------
+    async function fetchUpdates() {
+        try {
+            const res = await fetch(`${API_BASE}/updates`);
+            if (!res.ok) return [];
+            return await res.json();
+        } catch(e) { return []; }
     }
 
-    let profileIdRevealed = false;
-    document.getElementById('revealProfileIdBtn').addEventListener('click', ()=>{
-        const idEl = document.getElementById('profileAccountId');
-        profileIdRevealed = !profileIdRevealed;
-        if (profileIdRevealed) {
-            idEl.classList.remove('blurred');
-            document.getElementById('revealProfileIdBtn').innerHTML = '<i class="fas fa-eye-slash"></i>';
-        } else {
-            idEl.classList.add('blurred');
-            document.getElementById('revealProfileIdBtn').innerHTML = '<i class="fas fa-eye"></i>';
+    function renderUpdates(updates) {
+        const container = document.getElementById('dynamicUpdatesContainer');
+        if (!updates.length) {
+            container.innerHTML = '<p style="color:#ff8888; text-align:center;">No updates yet.</p>';
+            return;
         }
-    });
+        container.innerHTML = updates.map(u => `
+            <div class="section">
+                <div style="color:#ffaaaa; font-weight:bold;">${u.title}</div>
+                <small style="color:#ff8888;">${u.date}</small>
+                <p style="margin-top:0.5rem;">${u.content}</p>
+            </div>
+        `).join('');
+    }
 
-    document.getElementById('copyProfileIdBtn').addEventListener('click', async ()=>{
-        if (!currentAccountId) { showModal('Error', 'No Account ID loaded.'); return; }
-        const success = await copyToClipboard(currentAccountId);
-        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Account ID copied.' : `Select and copy: <span style="font-family:monospace;">${currentAccountId}</span>`);
-    });
-
-    let profileRefRevealed = false;
-    document.getElementById('revealProfileRefBtn').addEventListener('click', ()=>{
-        const refEl = document.getElementById('profileRefCode');
-        profileRefRevealed = !profileRefRevealed;
-        if (profileRefRevealed) {
-            refEl.classList.remove('blurred');
-            document.getElementById('revealProfileRefBtn').innerHTML = '<i class="fas fa-eye-slash"></i>';
+    async function updateUpdatesBadge() {
+        const updates = await fetchUpdates();
+        if (!updates.length) return;
+        const latestDate = updates[0].date;
+        const lastSeen = localStorage.getItem(LAST_SEEN_UPDATE_KEY);
+        const badge = document.getElementById('updatesBadge');
+        if (!badge) return;
+        if (!lastSeen || lastSeen < latestDate) {
+            badge.style.display = 'flex';
+            const count = lastSeen ? updates.filter(u => u.date > lastSeen).length : updates.length;
+            badge.innerText = count > 9 ? '9+' : count;
         } else {
-            refEl.classList.add('blurred');
-            document.getElementById('revealProfileRefBtn').innerHTML = '<i class="fas fa-eye"></i>';
+            badge.style.display = 'none';
         }
+    }
+
+    function markUpdatesSeen() {
+        fetchUpdates().then(updates => {
+            if (updates.length) {
+                localStorage.setItem(LAST_SEEN_UPDATE_KEY, updates[0].date);
+                updateUpdatesBadge();
+            }
+        });
+    }
+
+    const updatesBtn = document.getElementById('updatesBtn');
+    updatesBtn.addEventListener('click', async () => {
+        const updates = await fetchUpdates();
+        renderUpdates(updates);
+        markUpdatesSeen();
+        showScreen('updatesScreen');
+        playGamepadSound();
     });
 
-    document.getElementById('copyProfileRefBtn').addEventListener('click', async ()=>{
-        const code = currentReferralCode || getStorage(REF_CODE_V2_KEY);
-        if (!code) { showModal('Error', 'No referral code found.'); return; }
-        const success = await copyToClipboard(code);
-        showModal(success ? 'Copied' : 'Manual Copy', success ? 'Referral code copied.' : `Select and copy: <span style="font-family:monospace;">${code}</span>`);
-    });
-
-    // ---------------------- Bonus Ad (0.1 $FOOT per hour) ----------------------
+    // ---------- Bonus Ad ----------
     const bonusBtn = document.getElementById('bonusAdBtn');
     const bonusCooldownText = document.getElementById('bonusCooldownText');
     const adModal = document.getElementById('adModalOverlay');
@@ -1219,9 +1206,7 @@
     const adProgressBar = document.getElementById('adProgressBar');
     const adClaimBtn = document.getElementById('adClaimBtn');
     const adCloseBtn = document.getElementById('adCloseBtn');
-    let adTimer = null;
-    let adSecondsLeft = 10;
-    let adReady = false;
+    let adTimer = null, adSecondsLeft = 10, adReady = false;
 
     function updateBonusButton() {
         const last = getStorage(LAST_BONUS_CLAIM_KEY);
@@ -1230,8 +1215,8 @@
         if (last && (now - parseInt(last)) < oneHour) {
             bonusBtn.disabled = true;
             const remaining = oneHour - (now - parseInt(last));
-            const mins = Math.floor(remaining / 60000);
-            const secs = Math.floor((remaining % 60000) / 1000);
+            const mins = Math.floor(remaining/60000);
+            const secs = Math.floor((remaining%60000)/1000);
             bonusCooldownText.innerText = `Next bonus in ${mins}m ${secs}s`;
         } else {
             bonusBtn.disabled = false;
@@ -1240,21 +1225,17 @@
     }
 
     function startAdCountdown() {
-        adSecondsLeft = 10;
-        adReady = false;
-        adClaimBtn.disabled = true;
-        adClaimBtn.innerText = '⏳ Please wait...';
+        adSecondsLeft = 10; adReady = false;
+        adClaimBtn.disabled = true; adClaimBtn.innerText = '⏳ Please wait...';
         adCountdownText.innerText = adSecondsLeft;
         adProgressBar.style.width = '100%';
         adModal.classList.add('active');
-
         adTimer = setInterval(() => {
             adSecondsLeft--;
             adCountdownText.innerText = adSecondsLeft;
-            adProgressBar.style.width = (adSecondsLeft / 10 * 100) + '%';
+            adProgressBar.style.width = (adSecondsLeft/10*100)+'%';
             if (adSecondsLeft <= 0) {
-                clearInterval(adTimer);
-                adTimer = null;
+                clearInterval(adTimer); adTimer = null;
                 adReady = true;
                 adClaimBtn.disabled = false;
                 adClaimBtn.innerText = '🎉 Claim 0.1 $FOOT';
@@ -1264,35 +1245,20 @@
         }, 1000);
     }
 
-    function stopAdCountdown() {
-        if (adTimer) {
-            clearInterval(adTimer);
-            adTimer = null;
-        }
-        adModal.classList.remove('active');
-    }
+    function stopAdCountdown() { if (adTimer) { clearInterval(adTimer); adTimer = null; } adModal.classList.remove('active'); }
 
-    bonusBtn.addEventListener('click', () => {
-        if (bonusBtn.disabled) return;
-        startAdCountdown();
-    });
-
-    adClaimBtn.addEventListener('click', () => {
+    bonusBtn.addEventListener('click', ()=>{ if (!bonusBtn.disabled) startAdCountdown(); });
+    adClaimBtn.addEventListener('click', ()=>{
         if (!adReady) return;
         addToUserBalance(0.1);
         setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
-        updateMiningStats();
-        updateBonusButton();
+        updateMiningStats(); updateBonusButton();
         stopAdCountdown();
-        canvasConfetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#228B22', '#00ff00'] });
+        canvasConfetti({ particleCount:80, spread:60, origin:{y:0.7}, colors:['#228B22','#00ff00'] });
         showModal('Bonus claimed', '🎉 You earned 0.1 $FOOT! Come back in an hour for another.');
         playGamepadSound();
     });
-
-    adCloseBtn.addEventListener('click', () => {
-        stopAdCountdown();
-    });
-
+    adCloseBtn.addEventListener('click', stopAdCountdown);
     setInterval(updateBonusButton, 1000);
     updateBonusButton();
 
@@ -1302,19 +1268,19 @@
     const restoreBackupForm = document.getElementById('restoreBackupForm');
     const restoreSeedForm = document.getElementById('restoreSeedForm');
 
-    document.getElementById('showCreateWallet').addEventListener('click', ()=> { loginForm.style.display='none'; createForm.style.display='block'; });
-    document.getElementById('showLoginFromCreate').addEventListener('click', ()=> { createForm.style.display='none'; loginForm.style.display='block'; });
-    document.getElementById('showRestoreBackupLink').addEventListener('click', ()=> { loginForm.style.display='none'; restoreBackupForm.style.display='block'; });
-    document.getElementById('showLoginFromBackup').addEventListener('click', ()=> { restoreBackupForm.style.display='none'; loginForm.style.display='block'; });
-    document.getElementById('showSeedRestoreLink').addEventListener('click', ()=> { loginForm.style.display='none'; restoreSeedForm.style.display='block'; });
-    document.getElementById('showLoginFromSeed').addEventListener('click', ()=> { restoreSeedForm.style.display='none'; loginForm.style.display='block'; });
+    document.getElementById('showCreateWallet').addEventListener('click', ()=>{ loginForm.style.display='none'; createForm.style.display='block'; });
+    document.getElementById('showLoginFromCreate').addEventListener('click', ()=>{ createForm.style.display='none'; loginForm.style.display='block'; });
+    document.getElementById('showRestoreBackupLink').addEventListener('click', ()=>{ loginForm.style.display='none'; restoreBackupForm.style.display='block'; });
+    document.getElementById('showLoginFromBackup').addEventListener('click', ()=>{ restoreBackupForm.style.display='none'; loginForm.style.display='block'; });
+    document.getElementById('showSeedRestoreLink').addEventListener('click', ()=>{ loginForm.style.display='none'; restoreSeedForm.style.display='block'; });
+    document.getElementById('showLoginFromSeed').addEventListener('click', ()=>{ restoreSeedForm.style.display='none'; loginForm.style.display='block'; });
 
-    document.getElementById('createWalletBtn').addEventListener('click', async () => {
+    document.getElementById('createWalletBtn').addEventListener('click', async ()=>{
         try {
             const result = await createWallet();
             saveSession(result.accountId);
             initApp(result.accountId);
-            authScreen.classList.add('hidden'); appContainer.style.display = 'block';
+            authScreen.classList.add('hidden'); appContainer.style.display='block';
             document.getElementById('miningScreen').classList.remove('hidden');
             showModal('Wallet Created', `Your Account ID: <span style="font-family:monospace;">${result.accountId}</span><br>Seedphrase (save safely):<br><span style="font-family:monospace;">${result.seedphrase}</span>`);
             playGamepadSound();
@@ -1322,52 +1288,42 @@
         } catch(e) { document.getElementById('createError').innerText = 'Error creating wallet.'; }
     });
 
-    document.getElementById('loginBtn').addEventListener('click', () => {
+    document.getElementById('loginBtn').addEventListener('click', ()=>{
         const accId = document.getElementById('loginAccountId').value.trim().toLowerCase();
-        if (!accId || accId.length!==12 || !/^[a-f0-9]+$/i.test(accId)) {
-            document.getElementById('loginError').innerText = 'Invalid Account ID.';
-            return;
-        }
-        const testKey = `${accId}_metafoot_balance`;
-        if (localStorage.getItem(testKey) === null) {
-            document.getElementById('loginError').innerText = 'No wallet found for this ID.';
-            return;
-        }
+        if (!accId || accId.length!==12 || !/^[a-f0-9]+$/i.test(accId)) { document.getElementById('loginError').innerText='Invalid Account ID.'; return; }
+        if (localStorage.getItem(`${accId}_metafoot_balance`) === null) { document.getElementById('loginError').innerText='No wallet found for this ID.'; return; }
         currentAccountId = accId;
         currentReferralCode = getStorage(REF_CODE_V2_KEY) || secureRandomHex12();
         if (!getStorage(REF_CODE_V2_KEY)) setStorage(REF_CODE_V2_KEY, currentReferralCode);
         currentPlayerPublicId = derivePlayerPublicId(accId);
         saveSession(accId);
         initApp(accId);
-        authScreen.classList.add('hidden'); appContainer.style.display = 'block';
+        authScreen.classList.add('hidden'); appContainer.style.display='block';
         document.getElementById('miningScreen').classList.remove('hidden');
         playGamepadSound();
     });
 
-    document.getElementById('restoreBackupBtn').addEventListener('click', async () => {
+    document.getElementById('restoreBackupBtn').addEventListener('click', async ()=>{
         const text = document.getElementById('backupText').value.trim();
-        if (!text) { document.getElementById('backupError').innerText = 'Please paste your backup.'; return; }
+        if (!text) { document.getElementById('backupError').innerText='Please paste your backup.'; return; }
         const result = await restoreFromBackup(text);
-        if (result.error) {
-            document.getElementById('backupError').innerText = 'Invalid backup data.';
-            return;
-        }
+        if (result.error) { document.getElementById('backupError').innerText='Invalid backup data.'; return; }
         currentPlayerPublicId = derivePlayerPublicId(result.accountId);
         saveSession(result.accountId); initApp(result.accountId, result.backup);
-        authScreen.classList.add('hidden'); appContainer.style.display = 'block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
+        authScreen.classList.add('hidden'); appContainer.style.display='block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
         await autoConnectReferral();
     });
 
-    document.getElementById('restoreSeedBtn').addEventListener('click', async () => {
+    document.getElementById('restoreSeedBtn').addEventListener('click', async ()=>{
         const phrase = document.getElementById('seedRestoreInput').value.trim();
-        if (!phrase || phrase.split(/\s+/).length < 12) { document.getElementById('seedRestoreError').innerText = 'Enter a valid 12-word seedphrase.'; return; }
+        if (!phrase || phrase.split(/\s+/).length<12) { document.getElementById('seedRestoreError').innerText='Enter a valid 12-word seedphrase.'; return; }
         try {
             const accountId = await restoreFromSeedphrase(phrase);
             currentPlayerPublicId = derivePlayerPublicId(accountId);
             saveSession(accountId); initApp(accountId);
-            authScreen.classList.add('hidden'); appContainer.style.display = 'block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
+            authScreen.classList.add('hidden'); appContainer.style.display='block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
             await autoConnectReferral();
-        } catch(e) { document.getElementById('seedRestoreError').innerText = 'Invalid seedphrase.'; }
+        } catch(e) { document.getElementById('seedRestoreError').innerText='Invalid seedphrase.'; }
     });
 
     function initApp(accountId, backupData = null) {
@@ -1382,80 +1338,68 @@
             if (backupData.lastClaim) setStorage(LAST_CLAIM_KEY, backupData.lastClaim);
             if (backupData.referrals) {
                 const currentRefs = getReferralList();
-                backupData.referrals.forEach(r => {
-                    if (!currentRefs.some(c => c.referrer === r.referrer && c.referred === r.referred)) {
-                        currentRefs.push(r);
-                    }
-                });
+                backupData.referrals.forEach(r => { if (!currentRefs.some(c=>c.referrer===r.referrer && c.referred===r.referred)) currentRefs.push(r); });
                 localStorage.setItem(REFERRALS_KEY, JSON.stringify(currentRefs));
             }
         }
         registerMinerGlobally(accountId);
-        const lastRole = getStorage('last_active_role')||'player'; setUIRole(lastRole); updateMiningStats(); setUserBalance(getUserBalance());
-
-        // Use the best locally stored claim time immediately (before cloud data arrives)
+        const lastRole = getStorage('last_active_role')||'player';
+        setUIRole(lastRole);
+        updateMiningStats();
+        setUserBalance(getUserBalance());
         const localTimeNow = parseInt(getStorage(LAST_CLAIM_KEY)) || 0;
         if (localTimeNow > 0) updateCircularTimer();
-        if(timerInterval) clearInterval(timerInterval); timerInterval = setInterval(updateCircularTimer, 1000);
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateCircularTimer, 1000);
 
-        // Load cloud data and merge (but DO NOT overwrite the claim timer with cloud data)
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
-                // const serverClaim = cloudData.lastServerClaim;  // intentionally ignored to prevent timer reset
-
                 if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
-                if (userData.referralCode) {
-                    setStorage(REF_CODE_V2_KEY, userData.referralCode);
-                    currentReferralCode = userData.referralCode;
-                }
-
-                // We skip merging lastClaim from cloud/server to keep the local timer intact
-                // The server still enforces the 24h rule at claim time
-
+                if (userData.referralCode) { setStorage(REF_CODE_V2_KEY, userData.referralCode); currentReferralCode = userData.referralCode; }
                 updateMiningStats();
                 updateReferralUI();
                 loadAttributes();
                 renderTrainingScreen();
-                // updateCircularTimer(); // already running
             }
         });
 
         refreshReferralInfo();
         setInterval(refreshReferralInfo, 30000);
+        // Update badge on load and periodically
+        updateUpdatesBadge();
+        setInterval(updateUpdatesBadge, 60000);
     }
 
     // Music
     const playlist = [
-        { name: "Stadium 1", url: "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=stadium-crowd-7050.mp3" },
-        { name: "Stadium 2", url: "https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8f5b3c2.mp3?filename=stadium-crowd-6069.mp3" }
+        { name:"Stadium 1", url:"https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=stadium-crowd-7050.mp3" },
+        { name:"Stadium 2", url:"https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8f5b3c2.mp3?filename=stadium-crowd-6069.mp3" }
     ];
-    let currentTrack = 0, audio = null, playing = false;
-    function loadTrack(i) {
+    let currentTrack=0, audio=null, playing=false;
+    function loadTrack(i){
         if(audio){ audio.pause(); audio.removeEventListener('ended', onTrackEnd); }
         const track = playlist[i%playlist.length];
-        audio = new Audio(track.url); audio.volume = 0.35; audio.loop = false;
+        audio = new Audio(track.url); audio.volume=0.35; audio.loop=false;
         audio.addEventListener('ended', onTrackEnd);
         audio.load();
         if(playing) audio.play().catch(e=>{});
     }
-    function onTrackEnd(){ if(!playing) return; currentTrack = (currentTrack+1)%playlist.length; loadTrack(currentTrack); }
-    function startPlaylist(){ if(audio && playing) return; playing = true; if(audio) audio.play().catch(()=>{}); else loadTrack(currentTrack); }
-    function stopPlaylist(){ playing = false; if(audio) audio.pause(); }
+    function onTrackEnd(){ if(!playing) return; currentTrack=(currentTrack+1)%playlist.length; loadTrack(currentTrack); }
+    function startPlaylist(){ if(audio && playing) return; playing=true; if(audio) audio.play().catch(()=>{}); else loadTrack(currentTrack); }
+    function stopPlaylist(){ playing=false; if(audio) audio.pause(); }
     const musicBtn = document.getElementById('musicControl');
-    const musicIcon = document.getElementById('musicIcon');
-    const musicText = document.getElementById('musicText');
-    let musicActive = false;
     musicBtn.addEventListener('click', ()=>{
         if(musicActive){ stopPlaylist(); musicIcon.className='fas fa-volume-mute'; musicText.innerText='Play Music'; }
         else { startPlaylist(); musicIcon.className='fas fa-music'; musicText.innerText='Mute'; }
-        musicActive = !musicActive;
+        musicActive=!musicActive;
         playGamepadSound();
     });
 
-    document.getElementById('exportBackupBtn').addEventListener('click', async () => {
+    // Profile, backup, seed, etc.
+    document.getElementById('exportBackupBtn').addEventListener('click', async ()=>{
         if (!currentAccountId || !currentSeedphrase) { showModal('Error','Wallet not loaded.'); return; }
         const backup = {
             seedphrase: currentSeedphrase,
@@ -1469,63 +1413,20 @@
         };
         const jsonStr = JSON.stringify(backup);
         const success = await copyToClipboard(jsonStr);
-        if (success) {
-            showModal('Backup Copied', 'Backup data copied to clipboard.');
-        } else {
-            showModal('Backup (manual copy)', `<textarea readonly style="width:100%;height:100px;background:#1a1a2a;color:white;border:1px solid #ff5555;border-radius:1rem;padding:0.5rem;font-size:0.7rem;resize:none;">${jsonStr}</textarea><p style="margin-top:0.5rem;">Manual copy the text above.</p>`);
-        }
+        if (success) showModal('Backup Copied', 'Backup data copied to clipboard.');
+        else showModal('Backup (manual copy)', `<textarea readonly style="width:100%;height:100px;background:#1a1a2a;color:white;border:1px solid #ff5555;border-radius:1rem;padding:0.5rem;font-size:0.7rem;resize:none;">${jsonStr}</textarea><p style="margin-top:0.5rem;">Manual copy the text above.</p>`);
         playGamepadSound();
     });
 
-    document.getElementById('revealSeedBtn').addEventListener('click', () => {
+    document.getElementById('revealSeedBtn').addEventListener('click', ()=>{
         if (!currentSeedphrase) { showModal('Error','Seedphrase not loaded.'); return; }
         showModal('🔐 Your Seedphrase', `<div style="background:#1a1a2a;border:1px solid #ff5555;border-radius:1rem;padding:1rem;font-family:monospace;color:#ffaaaa;word-break:break-all;text-align:left;">${currentSeedphrase}</div><p style="color:#ff8888;font-size:0.8rem;">⚠️ Never share this.</p>`);
         playGamepadSound();
     });
 
-    document.getElementById('navHome').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-    document.getElementById('navEcosystem').addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); });
-    document.getElementById('navPreSale').addEventListener('click', ()=> { document.getElementById('preSaleModal').classList.add('active'); playGamepadSound(); });
-    document.getElementById('navTask').addEventListener('click', ()=> { showScreen('taskScreen'); renderTasks(); playGamepadSound(); });
-
-    document.getElementById('menuBtn').addEventListener('click', ()=> { document.getElementById('sideMenu').classList.add('open'); document.getElementById('menuOverlay').classList.add('active'); playGamepadSound(); });
-    document.getElementById('menuOverlay').addEventListener('click', ()=> { document.getElementById('sideMenu').classList.remove('open'); document.getElementById('menuOverlay').classList.remove('active'); });
-    document.querySelector('[data-action="halving"]').addEventListener('click', ()=> { 
-        const t=[0,15000,100000,500000,1000000], r=[4,2,1,0.5,0.25]; document.getElementById('halvingChartContainer').innerHTML = t.map((v,i)=>`<div class="chart-row"><div class="chart-label">${v===0?'0':(v>=1e6?'1M':(v>=1e3?(v/1e3).toFixed(0)+'k':v))}</div><div class="chart-bar-container"><div class="chart-bar" style="width:${(r[i]/4)*100}%;"></div></div><div class="chart-value">${r[i]} $FOOT</div></div>`).join(''); document.getElementById('halvingModal').classList.add('active'); playGamepadSound(); });
-    document.getElementById('closeHalvingBtn').addEventListener('click', ()=> document.getElementById('halvingModal').classList.remove('active'));
-    document.querySelector('[data-action="whitepaper"]').addEventListener('click', ()=> { 
-        document.getElementById('whitepaperContent').innerHTML = `<h1>METAFOOT Whitepaper</h1><h2>The Football Metaverse Where Everyone Earns</h2><hr><h3>Executive Summary</h3><p>METAFOOT is a revolutionary football‑themed ecosystem that combines daily token mining, player training, team management, tournaments, and real‑world utility. The ecosystem is powered by the $FOOT token (total supply 500 million).</p><h3>Token Allocation</h3><table><tr><th>Allocation</th><th>%</th><th>Tokens</th></tr><tr><td>Airdrop</td><td>10%</td><td>50M</td></tr><tr><td>Pre‑sale</td><td>25%</td><td>125M</td></tr><tr><td>Team</td><td>15%</td><td>75M</td></tr><tr><td>Staking</td><td>15%</td><td>75M</td></tr><tr><td>Liquidity</td><td>10%</td><td>50M</td></tr><tr><td>Marketing</td><td>10%</td><td>50M</td></tr><tr><td>Treasury</td><td>15%</td><td>75M</td></tr></table><p>© METAFOOT</p>`;
-        showScreen('whitepaperScreen'); playGamepadSound(); 
-    });
-    document.querySelector('[data-action="profile"]').addEventListener('click', ()=> { loadProfile(); showScreen('profileScreen'); playGamepadSound(); });
-    document.getElementById('saveProfileBtn').addEventListener('click', ()=> { const u = document.getElementById('profileUsername').value.trim(); if(u) { setStorage('profile_username', u); showModal('Saved','Username saved!'); playGamepadSound(); saveUserToCloud(); } });
-    document.querySelector('[data-action="legal"]').addEventListener('click', ()=> { showScreen('legalScreen'); playGamepadSound(); });
-    document.querySelector('[data-action="lock"]').addEventListener('click', ()=> { if(window._taskInterval) clearInterval(window._taskInterval); clearSession(); currentAccountId=null; appContainer.style.display='none'; authScreen.classList.remove('hidden'); document.getElementById('loginAccountId').value=''; document.getElementById('loginError').innerText=''; });
-    document.getElementById('updatesBtn').addEventListener('click', ()=> { showScreen('updatesScreen'); playGamepadSound(); });
-    document.getElementById('visionCard').addEventListener('click', ()=> { showScreen('visionDetailsScreen'); playGamepadSound(); });
-    document.querySelector('.closePreSaleBtn').addEventListener('click', ()=> document.getElementById('preSaleModal').classList.remove('active'));
-    document.querySelectorAll('.info-card[data-screen]').forEach(card => { card.addEventListener('click', ()=> { const t=card.dataset.screen; if(t==='stake') showScreen('stakeScreen'); else if(t==='pvp') showScreen('pvpScreen'); else if(t==='tournaments') showScreen('tournamentsScreen'); else if(t==='virtualCard') showScreen('virtualCardScreen'); playGamepadSound(); }); });
-    document.querySelectorAll('[id^="backFrom"]').forEach(b=>b.addEventListener('click', ()=> { showScreen('ecosystemScreen'); playGamepadSound(); }));
-    document.getElementById('backFromUpdatesBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-    document.getElementById('backFromLegalBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-    document.getElementById('stakeBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-    document.getElementById('pvpBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-    document.getElementById('tournamentsBackHomeBtn').addEventListener('click', ()=> { showScreen('miningScreen'); playGamepadSound(); });
-
-    function renderTasks() {
-        const now = Date.now(); const tgLast = parseInt(getStorage(TG_LAST_KEY))||0; const xLast = parseInt(getStorage(X_LAST_KEY))||0;
-        const tgReady = (now - tgLast) >= COOLDOWN_MS; const xReady = (now - xLast) >= COOLDOWN_MS;
-        const taskList = document.getElementById('dailyTasksList');
-        taskList.innerHTML = `<li><span>📱 Visit Telegram Channel</span><button class="task-btn" id="telegramTaskBtn" ${tgReady?'':'disabled'}>${tgReady?'0.6 $FOOT':formatCooldown(tgLast)}</button></li><li><span>🐦 Visit X (Twitter)</span><button class="task-btn" id="xTaskBtn" ${xReady?'':'disabled'}>${xReady?'0.6 $FOOT':formatCooldown(xLast)}</button></li>`;
-        function formatCooldown(last) { const remaining = COOLDOWN_MS - (now - last); const mins = Math.floor(remaining / 60000); const secs = Math.floor((remaining % 60000) / 1000); return `${mins}:${secs.toString().padStart(2,'0')}`; }
-        document.getElementById('telegramTaskBtn')?.addEventListener('click', () => { if(!tgReady) return; window.open('https://t.me/metafoott','_blank'); setStorage(TG_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
-        document.getElementById('xTaskBtn')?.addEventListener('click', () => { if(!xReady) return; const start = Date.now(); window.location.href = 'twitter://user?screen_name=METAFOOTT'; setTimeout(()=>{ if(Date.now()-start<2000) window.open('https://x.com/METAFOOTT','_blank'); },500); setStorage(X_LAST_KEY, now); addToUserBalance(0.6); updateMiningStats(); playGamepadSound(); renderTasks(); saveUserToCloud(); });
-        if(window._taskInterval) clearInterval(window._taskInterval); window._taskInterval = setInterval(renderTasks, 1000);
-    }
-
-    // Global polling & auto-save
+    // Simple global intervals
     setInterval(refreshGlobalStats, 30000);
-    setInterval(saveUserToCloud, 300000); // every 5 minutes
+    setInterval(saveUserToCloud, 300000);
     refreshGlobalStats();
 
     const authScreen = document.getElementById('authScreen');
@@ -1535,10 +1436,10 @@
         currentAccountId = savedAccountId;
         currentPlayerPublicId = derivePlayerPublicId(savedAccountId);
         initApp(currentAccountId);
-        authScreen.classList.add('hidden'); appContainer.style.display = 'block';
+        authScreen.classList.add('hidden'); appContainer.style.display='block';
         document.getElementById('miningScreen').classList.remove('hidden');
     } else {
-        authScreen.classList.remove('hidden'); appContainer.style.display = 'none';
+        authScreen.classList.remove('hidden'); appContainer.style.display='none';
     }
 })();
 </script>
