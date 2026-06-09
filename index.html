@@ -287,6 +287,21 @@
             transition: width 1s linear;
         }
 
+        /* Loading spinner */
+        .loader {
+            border: 4px solid rgba(255,85,85,0.2);
+            border-top: 4px solid #ff5555;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         @media (max-width: 480px) {
             .blockchain-modal { width: 130px; height: 130px; }
             .mining-rate { font-size: 1.5rem; }
@@ -678,6 +693,15 @@
     </div>
 </div>
 
+<!-- Loading Modal for restore -->
+<div id="loadingModalOverlay" class="custom-modal" style="z-index:4001;">
+    <div class="custom-modal-box">
+        <h3 style="color:#ffaaaa;">Restoring your wallet…</h3>
+        <div class="loader"></div>
+        <p style="color:#ffcccc; margin-top:1rem;">Fetching your data from the cloud.</p>
+    </div>
+</div>
+
 <script>
 (function(){
     // ============ Node.js API Base URL ============
@@ -918,6 +942,13 @@
         customModal.classList.add('active');
     }
     window.showModal = showModal;
+
+    function showLoadingModal() {
+        document.getElementById('loadingModalOverlay').classList.add('active');
+    }
+    function hideLoadingModal() {
+        document.getElementById('loadingModalOverlay').classList.remove('active');
+    }
 
     function getActiveMiners() { let m = parseInt(localStorage.getItem(ACTIVE_MINERS_KEY)); return isNaN(m)?0:m; }
     function getCurrentRate() {
@@ -1259,10 +1290,12 @@
     bonusBtn.addEventListener('click', ()=>{ if (!bonusBtn.disabled) startAdCountdown(); });
     adClaimBtn.addEventListener('click', ()=>{
         if (!adReady) return;
-        addToUserBalance(0.5);  // Increased from 0.1 to 0.5
+        addToUserBalance(0.5);  // reward 0.5 $FOOT
         setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
         updateMiningStats(); updateBonusButton();
         stopAdCountdown();
+        // ---- Cloud‑save the new balance immediately ----
+        saveUserToCloud();
         canvasConfetti({ particleCount:80, spread:60, origin:{y:0.7}, colors:['#228B22','#00ff00'] });
         showModal('Bonus claimed', '🎉 You earned 0.5 $FOOT! Come back in an hour for another.');
         playGamepadSound();
@@ -1320,7 +1353,14 @@
         const result = await restoreFromBackup(text);
         if (result.error) { document.getElementById('backupError').innerText='Invalid backup data.'; return; }
         currentPlayerPublicId = derivePlayerPublicId(result.accountId);
-        saveSession(result.accountId); initApp(result.accountId, result.backup);
+        saveSession(result.accountId);
+        // Show loading while restoring data
+        showLoadingModal();
+        try {
+            const cloudData = await loadUserFromCloud();
+            initApp(result.accountId, result.backup, cloudData);
+        } catch(e) {}
+        hideLoadingModal();
         authScreen.classList.add('hidden'); appContainer.style.display='block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
         await autoConnectReferral();
     });
@@ -1331,7 +1371,13 @@
         try {
             const accountId = await restoreFromSeedphrase(phrase);
             currentPlayerPublicId = derivePlayerPublicId(accountId);
-            saveSession(accountId); initApp(accountId);
+            saveSession(accountId);
+            // Show loading while fetching cloud data
+            showLoadingModal();
+            let cloudData = null;
+            try { cloudData = await loadUserFromCloud(); } catch(e) {}
+            initApp(accountId, null, cloudData);
+            hideLoadingModal();
             authScreen.classList.add('hidden'); appContainer.style.display='block'; document.getElementById('miningScreen').classList.remove('hidden'); playGamepadSound();
             await autoConnectReferral();
         } catch(e) { document.getElementById('seedRestoreError').innerText='Invalid seedphrase.'; }
@@ -1397,7 +1443,7 @@
     });
 
     // ---------- initApp ----------
-    function initApp(accountId, backupData = null) {
+    function initApp(accountId, backupData = null, preloadedCloudData = null) {
         currentAccountId = accountId;
         currentReferralCode = getStorage(REF_CODE_V2_KEY);
         if (!currentReferralCode) { currentReferralCode = secureRandomHex12(); setStorage(REF_CODE_V2_KEY, currentReferralCode); }
@@ -1425,10 +1471,15 @@
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateCircularTimer, 1000);
 
-        loadUserFromCloud().then(cloudData => {
+        // Apply cloud data if preloaded (from seed restore) or load normally
+        const applyCloudData = (cloudData) => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
-                if (userData.balance !== undefined) setUserBalance(userData.balance);
+                const localBalance = getUserBalance();
+                // Only use cloud balance if it's larger than local
+                if (userData.balance !== undefined && userData.balance > localBalance) {
+                    setUserBalance(userData.balance);
+                }
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
                 if (userData.referralCode) { setStorage(REF_CODE_V2_KEY, userData.referralCode); currentReferralCode = userData.referralCode; }
@@ -1437,7 +1488,13 @@
                 loadAttributes();
                 renderTrainingScreen();
             }
-        });
+        };
+
+        if (preloadedCloudData) {
+            applyCloudData(preloadedCloudData);
+        } else {
+            loadUserFromCloud().then(applyCloudData);
+        }
 
         refreshReferralInfo();
         setInterval(refreshReferralInfo, 30000);
