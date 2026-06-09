@@ -1259,10 +1259,12 @@
     bonusBtn.addEventListener('click', ()=>{ if (!bonusBtn.disabled) startAdCountdown(); });
     adClaimBtn.addEventListener('click', ()=>{
         if (!adReady) return;
-        addToUserBalance(0.5);  // Increased from 0.1 to 0.5
+        addToUserBalance(0.5);  // reward 0.5 $FOOT
         setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
         updateMiningStats(); updateBonusButton();
         stopAdCountdown();
+        // ---- FIX: Cloud‑save the new balance immediately so the reward persists on refresh ----
+        saveUserToCloud();
         canvasConfetti({ particleCount:80, spread:60, origin:{y:0.7}, colors:['#228B22','#00ff00'] });
         showModal('Bonus claimed', '🎉 You earned 0.5 $FOOT! Come back in an hour for another.');
         playGamepadSound();
