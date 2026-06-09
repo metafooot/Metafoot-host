@@ -1430,7 +1430,12 @@
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
-                if (userData.balance !== undefined) setUserBalance(userData.balance);
+                const localBalance = getUserBalance();
+                // ---------- FIX: Only use cloud balance if it's larger than local ----------
+                if (userData.balance !== undefined && userData.balance > localBalance) {
+                    setUserBalance(userData.balance);
+                }
+                // ---------- End of fix ----------
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
                 if (userData.referralCode) { setStorage(REF_CODE_V2_KEY, userData.referralCode); currentReferralCode = userData.referralCode; }
