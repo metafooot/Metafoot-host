@@ -1259,12 +1259,10 @@
     bonusBtn.addEventListener('click', ()=>{ if (!bonusBtn.disabled) startAdCountdown(); });
     adClaimBtn.addEventListener('click', ()=>{
         if (!adReady) return;
-        addToUserBalance(0.5);  // reward 0.5 $FOOT
+        addToUserBalance(0.5);  // Increased from 0.1 to 0.5
         setStorage(LAST_BONUS_CLAIM_KEY, Date.now().toString());
         updateMiningStats(); updateBonusButton();
         stopAdCountdown();
-        // ---- FIX: Cloud‑save the new balance immediately so the reward persists on refresh ----
-        saveUserToCloud();
         canvasConfetti({ particleCount:80, spread:60, origin:{y:0.7}, colors:['#228B22','#00ff00'] });
         showModal('Bonus claimed', '🎉 You earned 0.5 $FOOT! Come back in an hour for another.');
         playGamepadSound();
@@ -1430,12 +1428,7 @@
         loadUserFromCloud().then(cloudData => {
             if (cloudData) {
                 const userData = cloudData.userData || {};
-                const localBalance = getUserBalance();
-                // ---------- FIX: Only use cloud balance if it's larger than local ----------
-                if (userData.balance !== undefined && userData.balance > localBalance) {
-                    setUserBalance(userData.balance);
-                }
-                // ---------- End of fix ----------
+                if (userData.balance !== undefined) setUserBalance(userData.balance);
                 if (userData.attributes) setStorage('player_training_attrs', JSON.stringify(userData.attributes));
                 if (userData.username) setStorage('profile_username', userData.username);
                 if (userData.referralCode) { setStorage(REF_CODE_V2_KEY, userData.referralCode); currentReferralCode = userData.referralCode; }
