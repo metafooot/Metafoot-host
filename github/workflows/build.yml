@@ -27,7 +27,6 @@ jobs:
         run: |
           cp android/app/src/main/java/com/metafoot/app/MainActivity.java \
              android/app/src/main/java/com/metafoot/app/MainActivity.java.bak || true
-          # This copies YOUR custom activity that loads metafoot.top
           cp android/app/src/main/java/com/metafoot/app/MainActivity.java \
              android/app/src/main/java/com/metafoot/app/MainActivity.java
 
