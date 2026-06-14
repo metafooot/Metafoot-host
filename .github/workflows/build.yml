@@ -23,19 +23,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Capacitor CLI and dependencies
+      - name: Install dependencies
         run: npm install
+
+      - name: Add Android platform (creates the android folder)
+        run: npx cap add android
 
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
       - name: Accept Android SDK licenses & install required packages
         run: |
-          # Create local.properties with SDK path
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          # Accept licenses
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          # Install required SDK components
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.0" || true
 
       - name: Build APK
