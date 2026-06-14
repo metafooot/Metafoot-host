@@ -26,16 +26,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate Android icons from icon.png (using ImageMagick)
+      - name: Generate Android icons from icon.png
         run: |
-          # Create the required mipmap folders
+          # Install ImageMagick (needed for convert command)
+          sudo apt-get update && sudo apt-get install -y imagemagick
+
+          # Create required mipmap folders
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
           mkdir -p android/app/src/main/res/mipmap-xhdpi
           mkdir -p android/app/src/main/res/mipmap-xxhdpi
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
 
-          # Generate the different sizes (standard Android launcher icon sizes)
+          # Generate icons at different sizes
           convert icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
