@@ -17,11 +17,23 @@ jobs:
         with:
           node-version: 18
 
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Install dependencies
         run: npm install
 
       - name: Build Capacitor project (generate android folder)
         run: npx cap sync android
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          # Ensure required SDK packages are installed
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.0" || true
 
       - name: Build APK
         run: |
