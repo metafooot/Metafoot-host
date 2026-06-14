@@ -35,10 +35,11 @@ jobs:
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
+      # The corrected icon generation step (--iconPath removed)
       - name: Generate app icons using official Capacitor Assets
         run: |
           npm install @capacitor/assets --save-dev
-          npx @capacitor/assets generate --android --iconBackgroundColor '#0a0a0a' --iconPath ./icon.png
+          npx @capacitor/assets generate --android --iconBackgroundColor '#0a0a0a'
 
       - name: Accept Android SDK licenses & install required packages
         run: |
