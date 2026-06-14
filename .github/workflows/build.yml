@@ -26,15 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # ---- NEW: Install Capacitor Assets and generate app icons ----
-      - name: Install Capacitor Assets tool
-        run: npm install --save-dev @capacitor/assets
+      - name: Generate app icons from icon.png
+        run: |
+          npx @capacitor/assets generate --iconBackgroundColor '#0a0a0a' --android
 
-      - name: Generate Android app icons from icon.png
-        run: npx @capacitor/assets generate --iconBackgroundColor '#0a0a0a' --android
-      # --------------------------------------------------------------
-
-      - name: Add Android platform (creates the android folder)
+      - name: Add Android platform
         run: npx cap add android
 
       - name: Sync Capacitor Android project
