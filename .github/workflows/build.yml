@@ -26,30 +26,36 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # 1. Clean any previous Android folder
+      - name: Remove existing Android folder
+        run: rm -rf android
+
+      # 2. Create fresh Android project
+      - name: Add Android platform
+        run: npx cap add android
+
+      # 3. Sync Capacitor (ensures all native libraries are linked)
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      # 4. Now generate icons inside the fresh android folder
       - name: Generate Android icons from icon.png
         run: |
-          # Install ImageMagick (needed for convert command)
           sudo apt-get update && sudo apt-get install -y imagemagick
 
-          # Create required mipmap folders
+          # Create mipmap folders (they will be inside the fresh android/)
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
           mkdir -p android/app/src/main/res/mipmap-xhdpi
           mkdir -p android/app/src/main/res/mipmap-xxhdpi
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
 
-          # Generate icons at different sizes
+          # Resize icon.png into the standard Android icon sizes
           convert icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           convert icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           convert icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           convert icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-
-      - name: Add Android platform
-        run: npx cap add android
-
-      - name: Sync Capacitor Android project
-        run: npx cap sync android
 
       - name: Accept Android SDK licenses & install required packages
         run: |
