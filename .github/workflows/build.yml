@@ -26,40 +26,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # 1. Fresh start — remove any old Android folder
-      - name: Remove existing Android folder
+      - name: Remove any previous Android folder
         run: rm -rf android
 
-      # 2. Create fresh Android project
       - name: Add Android platform
         run: npx cap add android
 
-      # 3. Sync Capacitor (sets up native libraries)
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
-      # 4. Generate all app icons automatically using sharp (Node.js)
-      - name: Generate Android icons from icon.png
+      - name: Generate app icons using official Capacitor Assets
         run: |
-          npm install sharp
-          node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const sharp = require('sharp');
-
-          const sizes = [48, 72, 96, 144, 192];
-          const densities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
-
-          sizes.forEach((size, index) => {
-            const dir = \`android/app/src/main/res/mipmap-\${densities[index]}\`;
-            fs.mkdirSync(dir, { recursive: true });
-            sharp('icon.png')
-              .resize(size, size)
-              .toFile(path.join(dir, 'ic_launcher.png'))
-              .then(() => console.log(\`Created \${size}x\${size} icon\`))
-              .catch(err => console.error(err));
-          });
-          "
+          npm install @capacitor/assets --save-dev
+          npx @capacitor/assets generate --android --iconBackgroundColor '#0a0a0a' --iconPath ./icon.png
 
       - name: Accept Android SDK licenses & install required packages
         run: |
