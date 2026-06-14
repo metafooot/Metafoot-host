@@ -1,1 +1,6 @@
-
+{
+  "appId": "com.metafoot.app",
+  "appName": "METAFOOT",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
