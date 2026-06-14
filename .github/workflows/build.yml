@@ -26,9 +26,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate app icons from icon.png
-        run: |
-          npx @capacitor/assets generate --iconBackgroundColor '#0a0a0a' --android
+      # This is the only icon step – it handles everything automatically
+      - name: Generate & inject Android app icons from icon.png
+        uses: timkrase/capacitor-assets-generator-action@v1
+        with:
+          icon_path: './icon.png'
+          platform: 'android'
 
       - name: Add Android platform
         run: npx cap add android
