@@ -1,6 +1,10 @@
 {
   "appId": "com.metafoot.app",
   "appName": "METAFOOT",
-  "webDir": ".",
-  "bundledWebRuntime": false
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://metafoot.top",
+    "cleartext": true
+  }
 }
